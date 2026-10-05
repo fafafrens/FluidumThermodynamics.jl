@@ -3,6 +3,7 @@ module FluidumThermodynamics
 using ForwardDiff
 using LinearAlgebra
 using StaticArrays
+using SpecialFunctions: besselkx
 
 export AbstractEquationOfState,
        AbstractUnitSystem,
@@ -56,6 +57,8 @@ export AbstractEquationOfState,
        IdealQCD,
        FluiduMEoS,
        FluidumEOS,
+       HadronSpecies,
+       HadronResonanceGas,
        InversionError
 
 
@@ -67,5 +70,6 @@ include("inversion.jl")
 include("second_order.jl")
 include("transport.jl")
 include("models.jl")
+include("hadron_resonance_gas.jl")
 
 end # module

@@ -7,6 +7,7 @@ using StaticArrays
 include("prototype.jl")
 include("thermodynamics.jl")
 include("models.jl")
+include("hadron_resonance_gas.jl")
 include("inversion.jl")
 include("transport.jl")
 include("second_order.jl")

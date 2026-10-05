@@ -22,7 +22,7 @@ julia --project=. -e 'using Pkg; Pkg.instantiate(); Pkg.test()'
 julia --project=. examples/multicharge.jl
 ```
 
-The package is unregistered. Its dependencies are ForwardDiff, StaticArrays,
+The package is unregistered. Its dependencies are ForwardDiff, StaticArrays, SpecialFunctions,
 and the LinearAlgebra standard library.
 
 ## Thermodynamics
@@ -64,6 +64,7 @@ Included EOS implementations:
 |---|---|---|
 | `IdealQCD(Nc=3,Nf=2; units=NaturalGeV())` | Zero or one | Preserves Fluidum's physical normalization; evaluates in the chosen convention |
 | `FluiduMEoS(; units=NaturalGeV())` (also `FluidumEOS`) | Zero | Original Fluidum temperature-dependent fit with analytic first and second derivatives |
+| `HadronResonanceGas(particles; units=NaturalGeV(), terms=16)` | Any fixed number | Supplied resonance spectrum, Boltzmann or truncated Bose/Fermi statistics, analytic derivatives |
 | `PolynomialMultiChargeEOS(a,χ; units=NaturalGeV())` | Any fixed number | Toy pressure `a*T^4 + T^2*dot(μ,χ*μ)/2`; supplied coefficients use the chosen convention |
 
 The original `IdealQCD` normalization and conversion `ℏc = 0.1973261 GeV fm`
@@ -77,6 +78,26 @@ th = thermodynamic(eos,GrandCanonicalPoint(200.0))
 ```
 
 The fit has no finite-chemical-potential extension.
+
+### Hadron resonance gas
+
+Supply masses in the EOS energy unit, degeneracies, and charges in your chosen
+basis. Include antiparticles explicitly. This small example uses baryon number:
+
+```julia
+particles = [
+    HadronSpecies(0.938, 2, (1,); statistics=:fermion),
+    HadronSpecies(0.938, 2, (-1,); statistics=:fermion),
+    HadronSpecies(0.140, 1, (0,); statistics=:boson),
+]
+eos = HadronResonanceGas(particles; terms=16)
+th = thermodynamic(eos, GrandCanonicalPoint(0.155, 0.02))
+```
+
+The default species statistics are `:boltzmann` (one term). For quantum species,
+`terms` controls the fugacity expansion; increase it to check convergence.
+See the [HRG guide](docs/hrg.md) for the formula, multi-charge usage, and limits.
+No complete particle catalog is bundled.
 
 EOS models support addition, subtraction, negation, scalar multiplication,
 and scalar division. Composition combines evaluated pressure, gradient,
