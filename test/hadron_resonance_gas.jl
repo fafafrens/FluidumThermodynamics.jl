@@ -48,6 +48,11 @@ end
         @test zerocharge.pressure ≈ neutral.pressure
         @test zerocharge.gradient[1] ≈ neutral.gradient[1]
         @test zerocharge.hessian[1] ≈ neutral.hessian[1,1]
+        reduced = @inferred thermodynamic(eos,GrandCanonicalPoint(0.16,0.01))
+        padded = thermodynamic(eos,GrandCanonicalPoint(0.16,0.01,0.0))
+        @test reduced.pressure ≈ padded.pressure
+        @test reduced.gradient ≈ padded.gradient[1:2]
+        @test reduced.hessian ≈ padded.hessian[1:2,1:2]
         recovered = grandcanonical(eos,microcanonical(x,th),GrandCanonicalPoint(0.15,0.0,0.0))
         @test recovered.T ≈ x.T rtol=1e-7
         @test recovered.μ ≈ x.μ rtol=1e-7

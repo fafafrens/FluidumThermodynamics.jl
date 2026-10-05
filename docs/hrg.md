@@ -47,9 +47,11 @@ th = thermodynamic(eos, GrandCanonicalPoint(0.155, 0.02, 0.0, 0.005))
 ```
 
 This is an illustrative two-species gas, not a complete HRG spectrum. Every entry
-must have the same number and ordering of charges. A zero-charge point evaluates
-at all chemical potentials zero and returns only temperature derivatives.
-Otherwise the point must match the species charge dimension.
+must have the same number and ordering of charges. A point with `M` charges uses
+the first `M` entries of that basis and sets omitted chemical potentials to zero.
+Its state contains derivatives with respect to `(T, μ₁, …, μₘ)`. A zero-charge
+point therefore returns only temperature derivatives at all chemical potentials
+zero. The point cannot have more charges than the species basis.
 
 Masses use the EOS energy unit, as do temperature and chemical potentials.
 For `MeVFm()`, the proton mass is `938.0`. As with other EOS models, the unit
