@@ -1,0 +1,15 @@
+[deps]
+BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
+FluidumThermodynamics = "68283e48-3f13-4a9c-9058-dac5b63d2ea6"
+MuladdMacro = "46d2c3a1-f734-5fdb-9937-b9b9aeba4221"
+Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
+StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
+
+[sources]
+FluidumThermodynamics = {path = ".."}
+
+[compat]
+BenchmarkTools = "1"
+MuladdMacro = "0.2"
+StaticArrays = "1"
+julia = "1.10"
