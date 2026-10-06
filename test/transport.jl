@@ -8,6 +8,7 @@
         @test size(tr.charge.kappa) == (length(x.μ),length(x.μ))
         @test all(iszero,tr.charge.kappa)
         @test all(iszero,tr.charge.tau)
+        @test eltype(tr.charge.kappa) == eltype(tr.charge.tau) == typeof(th.pressure)
         model = TransportModel(ConstantEtaOverS(0.16,5.0),ConstantZetaOverS(0.03,10.0),ZeroChargeTransport())
         tr = transport(model,x,th)
         w = energy_density(x,th)+th.pressure

@@ -106,7 +106,7 @@ end
 
 @inline function charge_state(::ZeroChargeTransport, x::GrandCanonicalPoint{T,N}, th) where {T,N}
     z = zero(th.pressure)
-    Z = SMatrix{N,N}(ntuple(_ -> z, N*N))
+    Z = zeros(SMatrix{N,N,typeof(z)})
     ChargeState(Z,Z)
 end
 
