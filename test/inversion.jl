@@ -89,3 +89,27 @@ end
     @test err.iterations == 0
     @test occursin("singular", sprint(showerror,err))
 end
+
+# Newton inversion must stay allocation-free; it runs once per fluid cell per step.
+function inversion_allocations()
+    eos = FluidumEOS()
+    x = GrandCanonicalPoint(0.2345)
+    target = MicrocanonicalPoint(energy_density(x,thermodynamic(eos,x)))
+    guess = GrandCanonicalPoint(0.2)
+    qcd = IdealQCD()
+    y = GrandCanonicalPoint(0.2,0.1)
+    th = thermodynamic(qcd,y)
+    charged = MicrocanonicalPoint(energy_density(y,th),th.gradient[2])
+    canonical_target = CanonicalPoint(0.2,SVector(0.01))
+    grandcanonical(eos,target,guess)
+    grandcanonical(qcd,charged,GrandCanonicalPoint(0.18,0.0))
+    grandcanonical(qcd,canonical_target,SVector(0.0))
+    (@allocated(grandcanonical(eos,target,guess)),
+     @allocated(grandcanonical(qcd,charged,GrandCanonicalPoint(0.18,0.0))),
+     @allocated(grandcanonical(qcd,canonical_target,SVector(0.0))))
+end
+
+@testset "Inversion does not allocate" begin
+    inversion_allocations()
+    @test all(iszero, inversion_allocations())
+end

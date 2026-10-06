@@ -18,7 +18,9 @@ end
 _physical_point(x::GrandCanonicalPoint) = x.T > zero(x.T) && all(isfinite, coordinates(x))
 _residual_norm(r) = isempty(r) ? zero(eltype(r)) : norm(r, Inf)
 
-function _trial(evaluate, point, y, domain)
+# Function arguments are typed so Julia specializes on them; it does not for
+# functions that are only passed through to another call.
+function _trial(evaluate::E, point::P, y, domain::F) where {E,P,F}
     domain(point(y)) || return nothing
     result = try
         evaluate(y)
@@ -32,8 +34,8 @@ function _trial(evaluate, point, y, domain)
     result
 end
 
-function _newton(evaluate, point, initial, target;
-                 atol, rtol, maxiter, maxbacktracks, domain)
+function _newton(evaluate::E, point::P, initial, target;
+                 atol, rtol, maxiter, maxbacktracks, domain::F) where {E,P,F}
     maxiter >= 0 || throw(ArgumentError("maxiter must be nonnegative"))
     maxbacktracks >= 0 || throw(ArgumentError("maxbacktracks must be nonnegative"))
     isfinite(atol) && atol > 0 || throw(ArgumentError("atol must be finite and positive"))
@@ -123,16 +125,17 @@ function grandcanonical(eos::AbstractEquationOfState, target::MicrocanonicalPoin
     length(target.n) == D-1 || throw(DimensionMismatch(
         "guess and microcanonical point have different numbers of charges"))
     target_values = SVector(target.energy_density, target.n...)
-    function evaluate(y)
+    # The size comes from the argument type, so the Jacobian is a static matrix.
+    function evaluate(y::SVector{K}) where {K}
         x = grandcanonical_from_coordinates(y)
         th = thermodynamic(eos,x)
         values = SVector(energy_density(x,th), charge_densities(th)...)
         dε = th.hessian*y
-        jacobian = SMatrix{D,D}(ntuple(k -> begin
-            i = (k-1) % D + 1
-            j = (k-1) ÷ D + 1
+        jacobian = SMatrix{K,K}(ntuple(Val(K*K)) do k
+            i = (k-1) % K + 1
+            j = (k-1) ÷ K + 1
             i == 1 ? dε[j] : th.hessian[i,j]
-        end, D*D))
+        end)
         values, jacobian
     end
     _newton(evaluate, grandcanonical_from_coordinates, initial, target_values;
