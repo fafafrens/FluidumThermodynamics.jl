@@ -148,3 +148,22 @@ end
     @test ForwardDiff.derivative(coefficient,0.2) ≈ 0.4
     @test coefficient(big"0.2") isa BigFloat
 end
+
+# The coefficient checks run once per transport call and must stay allocation-free.
+function second_order_allocations()
+    model = FunctionalSecondOrderTransport() do x,th,leading
+        SecondOrderState(:demo; shear=(delta_pipi=1.1*leading.shear.tau,lambda=SVector(0.1)),
+                         bulk=(delta_PiPi=0.9*leading.bulk.tau,),
+                         charge=(delta_VV=@SMatrix([1.2]),))
+    end
+    fluid = FluidModel(IdealQCD(),TransportModel(ConstantEtaOverS(0.16,5.0),ConstantZetaOverS(0.03,10.0),
+                       ConstantChargeTransport(@SMatrix([0.1]),@SMatrix([1.0])); second_order=model))
+    x = GrandCanonicalPoint(0.2,0.05)
+    transport(fluid,x)
+    @allocated transport(fluid,x)
+end
+
+@testset "Second-order checks do not allocate" begin
+    second_order_allocations()
+    @test second_order_allocations() == 0
+end

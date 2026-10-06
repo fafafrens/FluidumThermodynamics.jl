@@ -48,20 +48,35 @@ struct SecondOrderState{S<:NamedTuple,B<:NamedTuple,C<:NamedTuple}
 
     function SecondOrderState(basis::Symbol, shear::S, bulk::B, charge::C) where {
             S<:NamedTuple,B<:NamedTuple,C<:NamedTuple}
-        for (sector, coefficients) in ((:shear,shear),(:bulk,bulk),(:charge,charge))
-            for (name, value) in pairs(coefficients)
-                if value isa AbstractArray{<:Number}
-                    ndims(value) > 0 || throw(ArgumentError(
-                        "$sector.$name must have at least one charge axis"))
-                elseif !(value isa Number) || sector === :charge
-                    throw(ArgumentError(sector === :charge ?
-                        "$sector.$name must be a numeric array over charge indices" :
-                        "$sector.$name must be a number or numeric array over charge indices"))
-                end
-            end
-        end
+        _check_sector(_check_coefficient, :shear, shear)
+        _check_sector(_check_coefficient, :bulk, bulk)
+        _check_sector(_check_coefficient, :charge, charge)
         new{S,B,C}(basis,shear,bulk,charge)
     end
+end
+
+# Apply `check(sector, name, value)` to every entry of a sector. `map` over the
+# names and values is unrolled with each entry's concrete type; iterating
+# `pairs` of a NamedTuple with mixed value types is not type-stable.
+@inline function _check_sector(check::F, sector::Symbol, coefficients::NamedTuple) where {F}
+    map((name, value) -> check(sector, name, value), keys(coefficients), values(coefficients))
+    nothing
+end
+
+@inline function _check_coefficient(sector, name, value::AbstractArray{<:Number})
+    ndims(value) > 0 || throw(ArgumentError("$sector.$name must have at least one charge axis"))
+    nothing
+end
+
+@inline function _check_coefficient(sector, name, value::Number)
+    sector === :charge && throw(ArgumentError("$sector.$name must be a numeric array over charge indices"))
+    nothing
+end
+
+function _check_coefficient(sector, name, value)
+    throw(ArgumentError(sector === :charge ?
+        "$sector.$name must be a numeric array over charge indices" :
+        "$sector.$name must be a number or numeric array over charge indices"))
 end
 
 SecondOrderState(basis::Symbol; shear::NamedTuple=(;), bulk::NamedTuple=(;),
@@ -109,15 +124,19 @@ function second_order_state end
 @inline _validate_second_order(::Nothing, x::GrandCanonicalPoint) = nothing
 
 function _validate_second_order(state::SecondOrderState, x::GrandCanonicalPoint{T,N}) where {T,N}
-    for (sector, coefficients) in ((:shear,state.shear),(:bulk,state.bulk),(:charge,state.charge))
-        for (name, value) in pairs(coefficients)
-            if value isa AbstractArray
-                all(axis -> axis == Base.OneTo(N), axes(value)) || throw(DimensionMismatch(
-                    "$sector.$name must have $N entries along every charge axis; got axes $(axes(value))"))
-            end
-        end
-    end
+    check(sector, name, value) = _check_charge_axes(sector, name, value, Val(N))
+    _check_sector(check, :shear, state.shear)
+    _check_sector(check, :bulk, state.bulk)
+    _check_sector(check, :charge, state.charge)
     state
+end
+
+@inline _check_charge_axes(sector, name, value, ::Val) = nothing
+
+@inline function _check_charge_axes(sector, name, value::AbstractArray, ::Val{N}) where {N}
+    all(axis -> axis == Base.OneTo(N), axes(value)) || throw(DimensionMismatch(
+        "$sector.$name must have $N entries along every charge axis; got axes $(axes(value))"))
+    nothing
 end
 
 _validate_second_order(state, x::GrandCanonicalPoint) =
