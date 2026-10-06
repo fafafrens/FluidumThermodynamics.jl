@@ -27,6 +27,10 @@ export AbstractEquationOfState,
        susceptibility,
        susceptibilities,
        energy_density,
+       enthalpy,
+       trace_anomaly,
+       pressure_derivatives,
+       speed_of_sound_squared,
        canonical,
        microcanonical,
        grandcanonical,
@@ -59,6 +63,7 @@ export AbstractEquationOfState,
        FluidumEOS,
        HadronSpecies,
        HadronResonanceGas,
+       TabulatedEOS,
        InversionError
 
 
@@ -71,5 +76,6 @@ include("second_order.jl")
 include("transport.jl")
 include("models.jl")
 include("hadron_resonance_gas.jl")
+include("tabulated.jl")
 
 end # module

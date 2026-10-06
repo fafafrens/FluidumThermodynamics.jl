@@ -40,6 +40,8 @@ s = entropy_density(th)
 n = charge_densities(th)
 χ = susceptibilities(th)
 ε = energy_density(x,th)
+w = enthalpy(x,th)              # ε + p
+cs2 = speed_of_sound_squared(x,th)
 
 can = canonical(x,th)          # (T,n)
 mic = microcanonical(x,th)     # (ε,n)
@@ -55,7 +57,33 @@ from_mic = grandcanonical(eos,mic,GrandCanonicalPoint(0.18,0.0))
   ensemble when converting coordinates.
 
 Each point also accepts an `SVector` of charges. A single argument constructs
-a zero-charge point. Energy density is the Legendre transform
+a zero-charge point.
+
+Derived quantities reuse the stored gradient and Hessian, with no further EOS
+evaluation:
+
+| Function | Quantity |
+|---|---|
+| `enthalpy(x,th)` | `ε + p = T s + μ⋅n` |
+| `trace_anomaly(x,th)` | `ε - 3p` |
+| `pressure_derivatives(x,th)` | `(∂p/∂ε at fixed n, ∂p/∂nᵢ at fixed ε)` |
+| `speed_of_sound_squared(x,th)` | `c_s²` at fixed entropy per charge |
+
+Each also accepts `(eos,x)` and evaluates the EOS once. The speed of sound is
+`c_s² = ∂p/∂ε + Σᵢ nᵢ/(ε+p) ∂p/∂nᵢ`, which reduces to `s/(T ∂s/∂T)` without
+charges and to `1/3` for `IdealQCD`.
+
+Plain numbers are shorthand for a grand-canonical point, in the EOS unit
+convention:
+
+```julia
+thermodynamic(eos,0.2,0.03)          # thermodynamic(eos,GrandCanonicalPoint(0.2,0.03))
+thermodynamic(eos,0.2,SVector(0.03)) # same point
+thermodynamic(eos,0.2)               # zero-charge point
+```
+
+Numbers are never read as canonical or microcanonical coordinates; build a
+`CanonicalPoint` or `MicrocanonicalPoint` for those. Energy density is the Legendre transform
 `ε = -p + T*s + dot(μ,n)`.
 
 Included EOS implementations:
@@ -66,6 +94,7 @@ Included EOS implementations:
 | `FluiduMEoS(; units=NaturalGeV())` (also `FluidumEOS`) | Zero | Original Fluidum temperature-dependent fit with analytic first and second derivatives |
 | `HadronResonanceGas(particles; units=NaturalGeV(), terms=16)` | Any fixed number | Supplied resonance spectrum, Boltzmann or truncated Bose/Fermi statistics, analytic derivatives |
 | `PolynomialMultiChargeEOS(a,χ; units=NaturalGeV())` | Any fixed number | Toy pressure `a*T^4 + T^2*dot(μ,χ*μ)/2`; supplied coefficients use the chosen convention |
+| `TabulatedEOS(T,p,s,dsdT; units=NaturalGeV())` | Zero | Quintic Hermite table of `p/T⁴`; thermodynamically consistent and guess-free inversion |
 
 The original `IdealQCD` normalization and conversion `ℏc = 0.1973261 GeV fm`
 are preserved. Its single-charge convention is not generalized automatically
@@ -102,6 +131,34 @@ No complete particle catalog is bundled.
 EOS models support addition, subtraction, negation, scalar multiplication,
 and scalar division. Composition combines evaluated pressure, gradient,
 and Hessian, preserving specialized `thermodynamic` implementations.
+
+### Tabulated EOS
+
+`TabulatedEOS` interpolates a zero-charge table, for example lattice QCD data.
+It interpolates the single function `p/T⁴` with quintic Hermite polynomials
+that match `p`, `s`, and `∂s/∂T` at every node. Entropy and `∂s/∂T` are
+derivatives of that one interpolant, so the table is thermodynamically
+consistent, and `p` is twice continuously differentiable.
+
+```julia
+table = TabulatedEOS(T, p, s, dsdT)              # columns in the EOS convention
+table = TabulatedEOS(T, p, s)                    # dsdT estimated from s
+table = TabulatedEOS(FluidumEOS(), range(0.08, 0.6, length=200))  # sample a model
+th = thermodynamic(table, 0.2)
+x = grandcanonical(table, MicrocanonicalPoint(ε)) # no initial guess needed
+```
+
+Temperatures must be positive and strictly increasing, but need not be
+uniform. When a lattice table lists the speed of sound instead of `∂s/∂T`, use
+`dsdT = s ./ (T .* cs2)`. Without `dsdT`, it is estimated by fourth-order finite
+differences of `s/T³`, which is less accurate. The table is not extrapolated;
+evaluation or inversion outside its range throws a `DomainError`.
+
+Sampling `FluidumEOS` on 100 nodes from 0.08 to 0.6 GeV reproduces pressure to
+about `4e-9`, entropy to `5e-8`, and `∂s/∂T` to `2e-6`, relative. The error falls
+as the sixth power of the node spacing. A conformal `p ∝ T⁴` is exact.
+Because energy density increases with temperature, `ε -> T` inversion brackets
+the root in one table cell and needs no initial guess.
 
 ## Unit conventions
 
@@ -253,6 +310,10 @@ th,tr = transport(FluidModel(eos,model),x)
 η,τπ = tr.shear.eta,tr.shear.tau
 ζ,τΠ = tr.bulk.zeta,tr.bulk.tau
 ```
+
+`transport(fluid,T,μ...)` is shorthand for
+`transport(fluid,GrandCanonicalPoint(T,μ...))`, for example
+`th,tr = transport(FluidModel(eos,model),0.2,0.03)`.
 
 `FluidModel` is an EOS/transport container; it does not evolve a fluid.
 The constant shear and bulk models use

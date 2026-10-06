@@ -65,6 +65,20 @@ function thermodynamic(eos::AbstractEquationOfState, x::GrandCanonicalPoint)
     ThermodynamicState(eos,p,g,H)
 end
 
+"""
+    thermodynamic(eos, T, μ...)
+    thermodynamic(eos, T, μ::SVector)
+
+Shorthand for `thermodynamic(eos, GrandCanonicalPoint(T, μ...))`. Plain numbers
+are always grand-canonical coordinates in the EOS unit convention; omitted
+chemical potentials give a zero-charge point.
+"""
+@inline thermodynamic(eos::AbstractEquationOfState, T::Real, μ::Real...) =
+    thermodynamic(eos, GrandCanonicalPoint(T, μ...))
+
+@inline thermodynamic(eos::AbstractEquationOfState, T::Real, μ::SVector) =
+    thermodynamic(eos, GrandCanonicalPoint(T, μ))
+
 @inline function thermodynamic(eos::SumEOS, x::GrandCanonicalPoint)
     a, b = thermodynamic(eos.a,x), thermodynamic(eos.b,x)
     ThermodynamicState(eos,a.pressure+b.pressure, a.gradient+b.gradient, a.hessian+b.hessian)
@@ -114,6 +128,66 @@ Legendre transform
 """
 @inline function energy_density(x::GrandCanonicalPoint, th::ThermodynamicState)
     -th.pressure + x.T*entropy_density(th) + dot(x.μ, charge_densities(th))
+end
+
+"""
+    enthalpy(x, th)
+
+Enthalpy density `w = ε + p = T s + μ⋅n`, evaluated without the cancellation
+in `-p + T s + μ⋅n`.
+"""
+@inline enthalpy(x::GrandCanonicalPoint, th::ThermodynamicState) =
+    x.T*entropy_density(th) + dot(x.μ, charge_densities(th))
+
+"""
+    trace_anomaly(x, th)
+
+Trace of the energy-momentum tensor, `ε - 3p`. It vanishes for a conformal EOS.
+Divide by `T^4` for the dimensionless interaction measure in natural units.
+"""
+@inline trace_anomaly(x::GrandCanonicalPoint, th::ThermodynamicState) =
+    energy_density(x,th) - 3*th.pressure
+
+"""
+    pressure_derivatives(x, th)
+
+Derivatives of the pressure in microcanonical variables,
+
+    (∂p/∂ε|ₙ, ∂p/∂n₁|_ε, …, ∂p/∂nₙ|_ε).
+
+They follow from the stored gradient and Hessian: with `y = (T, μ)`,
+`∂ε/∂y = yᵀ ∇²p` and `∂n/∂y` are the charge rows of `∇²p`. The Jacobian
+`∂(ε,n)/∂(T,μ)` must be nonsingular.
+"""
+@inline function pressure_derivatives(x::GrandCanonicalPoint, th::ThermodynamicState{U,T,D}) where {U,T,D}
+    y = SVector{D,T}(x.T, x.μ...)
+    H = th.hessian
+    dε = H'*y
+    J = SMatrix{D,D,T}(ntuple(Val(D*D)) do index
+        i = mod1(index,D)
+        j = (index-1) ÷ D + 1
+        i == 1 ? dε[j] : H[i,j]
+    end)
+    J' \ th.gradient
+end
+
+"""
+    speed_of_sound_squared(x, th)
+
+Adiabatic speed of sound squared at fixed entropy per charge,
+
+    c_s² = ∂p/∂ε|ₙ + Σᵢ nᵢ/(ε+p) ∂p/∂nᵢ|_ε.
+
+With no charges this is `s/(T ∂s/∂T)`. Velocities are in units of `c`.
+"""
+@inline function speed_of_sound_squared(x::GrandCanonicalPoint, th::ThermodynamicState)
+    dp = pressure_derivatives(x,th)
+    n = charge_densities(th)
+    dp[1] + dot(n, dp[2:end])/enthalpy(x,th)
+end
+
+for f in (:enthalpy, :trace_anomaly, :pressure_derivatives, :speed_of_sound_squared)
+    @eval @inline $f(eos::AbstractEquationOfState, x::GrandCanonicalPoint) = $f(x, thermodynamic(eos,x))
 end
 
 # Representation changes when the state has already been evaluated.

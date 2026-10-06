@@ -20,3 +20,21 @@
                            ConstantChargeTransport(ones(2,2),ones(2,2)))
     @test_throws DimensionMismatch transport(FluidModel(eos,wrong),GrandCanonicalPoint(0.2,0.0))
 end
+
+@testset "Transport from plain numbers" begin
+    eos = IdealQCD()
+    model = TransportModel(ConstantEtaOverS(0.16,5.0),ConstantZetaOverS(0.03,10.0),ZeroChargeTransport())
+    fluid = FluidModel(eos,model)
+    for (args, x) in (((0.2,), GrandCanonicalPoint(0.2)),
+                      ((0.2,0.1), GrandCanonicalPoint(0.2,0.1)),
+                      ((0.2,SVector(0.1)), GrandCanonicalPoint(0.2,0.1)))
+        th, tr = transport(fluid,args...)
+        th0, tr0 = transport(fluid,x)
+        @test th.pressure == th0.pressure
+        @test th.gradient == th0.gradient
+        @test tr.shear.eta == tr0.shear.eta
+        @test tr.bulk.tau == tr0.bulk.tau
+        @test size(tr.charge.kappa) == size(tr0.charge.kappa)
+    end
+end
+

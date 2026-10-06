@@ -89,8 +89,7 @@ end
 
 @inline function shear_state(model::ConstantEtaOverS, x, th)
     eta = model.eta_over_s*entropy_density(th)
-    enthalpy = energy_density(x,th) + th.pressure
-    tau = eta/(model.Ctau*enthalpy)
+    tau = eta/(model.Ctau*enthalpy(x,th))
     ShearState(eta,tau)
 end
 
@@ -101,8 +100,7 @@ end
 
 @inline function bulk_state(model::ConstantZetaOverS, x, th)
     zeta = model.zeta_over_s*entropy_density(th)
-    enthalpy = energy_density(x,th) + th.pressure
-    tau = zeta/(model.Ctau*enthalpy)
+    tau = zeta/(model.Ctau*enthalpy(x,th))
     BulkState(zeta,tau)
 end
 
@@ -132,3 +130,17 @@ end
     th = thermodynamic(fluid.eos,x)
     th, transport(fluid.transport,x,th)
 end
+
+"""
+    transport(fluid, T, μ...)
+    transport(fluid, T, μ::SVector)
+
+Shorthand for `transport(fluid, GrandCanonicalPoint(T, μ...))`, returning the
+thermodynamic and transport states. Plain numbers are grand-canonical
+coordinates in the EOS unit convention.
+"""
+@inline transport(fluid::FluidModel, T::Real, μ::Real...) =
+    transport(fluid, GrandCanonicalPoint(T, μ...))
+
+@inline transport(fluid::FluidModel, T::Real, μ::SVector) =
+    transport(fluid, GrandCanonicalPoint(T, μ))
