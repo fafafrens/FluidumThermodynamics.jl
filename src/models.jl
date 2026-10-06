@@ -11,6 +11,9 @@ therefore useful for exercising multi-charge thermodynamics and inversion.
 The supplied coefficients are numerical values in the selected convention,
 with units pressure/energy⁴. Use `convert_units` to change the convention of
 an existing model while preserving its physical predictions.
+
+A plain matrix `chi` is copied into a static matrix, so evaluation does not
+allocate; later changes to the original matrix do not affect the model.
 """
 struct PolynomialMultiChargeEOS{U,A,K,S} <: AbstractEquationOfState{U}
     a::A
@@ -20,6 +23,7 @@ end
 
 function PolynomialMultiChargeEOS(a, chi; units::U=NaturalGeV()) where {U<:AbstractUnitSystem}
     scale = unit_scale(units)
+    chi = _static_matrix(chi)
     PolynomialMultiChargeEOS{U,typeof(a),typeof(chi),typeof(scale)}(a,chi,scale)
 end
 

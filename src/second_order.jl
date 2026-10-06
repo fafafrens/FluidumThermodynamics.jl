@@ -36,7 +36,7 @@ For example, a shear/bulk coupling can be stored as
 arrays. Omitted entries are unspecified, not implicit zeros. No universal
 coefficient list, symmetry, or physical closure is imposed.
 
-Array storage is retained by reference, like `ConstantChargeTransport`.
+Array storage is retained by reference.
 Use immutable static arrays or copy mutable arrays when independent ownership
 is needed.
 """

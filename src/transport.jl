@@ -20,12 +20,20 @@ struct ConstantZetaOverS{T} <: AbstractBulkTransport
 end
 
 """
+    ConstantChargeTransport(kappa, tau)
+
 Coupled charge-transport model. Conductivity and relaxation time are matrices,
 so off-diagonal transport among conserved charges is supported directly.
+Plain matrices are copied into static matrices, so evaluation does not
+allocate; later changes to the original matrices do not affect the model.
 """
 struct ConstantChargeTransport{K,R} <: AbstractChargeTransport
     kappa::K
     tau::R
+    function ConstantChargeTransport(kappa, tau)
+        k, t = _static_matrix(kappa), _static_matrix(tau)
+        new{typeof(k),typeof(t)}(k,t)
+    end
 end
 
 """

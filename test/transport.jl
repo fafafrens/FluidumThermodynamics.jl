@@ -39,3 +39,32 @@ end
     end
 end
 
+
+function plain_matrix_allocations(eos, fluid, x)
+    thermodynamic(eos,x); transport(fluid,x)
+    @allocated(thermodynamic(eos,x)), @allocated(transport(fluid,x))
+end
+
+@testset "Plain matrices are stored as static matrices" begin
+    χ = [2.0 0.3; 0.3 1.5]
+    κ, τ = [0.4 0.05; 0.05 0.3], [1.0 0.0; 0.0 1.2]
+    plain = PolynomialMultiChargeEOS(3.0,χ)
+    static = PolynomialMultiChargeEOS(3.0,SMatrix{2,2}(χ))
+    @test plain.chi isa SMatrix{2,2,Float64}
+    @test typeof(plain) == typeof(static)
+    model = ConstantChargeTransport(κ,τ)
+    @test model.kappa isa SMatrix{2,2,Float64} && model.tau isa SMatrix{2,2,Float64}
+    @test model.kappa == κ && model.tau == τ
+    # The model owns a copy: changing the input afterwards has no effect.
+    χ[1,1] = 99.0
+    @test plain.chi[1,1] == 2.0
+    x = GrandCanonicalPoint(0.2,0.03,-0.01)
+    @test thermodynamic(plain,x).hessian == thermodynamic(static,x).hessian
+    fluid = FluidModel(plain,TransportModel(ConstantEtaOverS(0.16,5.0),ConstantZetaOverS(0.03,10.0),model))
+    plain_matrix_allocations(plain,fluid,x)
+    @test all(iszero, plain_matrix_allocations(plain,fluid,x))
+    # Static input is kept as is, and large matrices are not converted.
+    S = @SMatrix [1.0 0.0; 0.0 1.0]
+    @test ConstantChargeTransport(S,S).kappa === S
+    @test ConstantChargeTransport(ones(9,9),ones(9,9)).kappa isa Matrix
+end

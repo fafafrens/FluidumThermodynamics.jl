@@ -1,4 +1,10 @@
 
+# Copy a small plain matrix into a static one so evaluation avoids heap arrays.
+# Static matrices pass through; large matrices stay as given to bound compile time.
+_static_matrix(A::StaticMatrix) = A
+_static_matrix(A::AbstractMatrix) = length(A) <= 64 ? SMatrix{size(A,1),size(A,2)}(A) : A
+_static_matrix(A) = A
+
 """
     AbstractEquationOfState{U<:AbstractUnitSystem}
 

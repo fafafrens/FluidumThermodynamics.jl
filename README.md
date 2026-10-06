@@ -322,7 +322,9 @@ The constant shear and bulk models use
 coefficients and states with nonzero enthalpy.
 
 `ConstantChargeTransport(κ,τ)` accepts matrices whose dimensions match the
-number of charges, including off-diagonal couplings.
+number of charges, including off-diagonal couplings. Plain matrices are copied
+into static matrices, as is `χ` in `PolynomialMultiChargeEOS`, so evaluation
+does not allocate.
 `ZeroShearTransport`, `ZeroBulkTransport`, and `ZeroChargeTransport`
 disable their respective sectors.
 
