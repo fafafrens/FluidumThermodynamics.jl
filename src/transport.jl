@@ -26,6 +26,12 @@ Coupled charge-transport model. Conductivity and relaxation time are matrices,
 so off-diagonal transport among conserved charges is supported directly.
 Plain matrices are copied into static matrices, so evaluation does not
 allocate; later changes to the original matrices do not affect the model.
+
+The entries are plain numbers in the EOS convention (κ in length⁻², τ in
+length), fixed independently of the state. Since κ carries dimension
+energy², a fixed value is a unit-dependent statement whose diffusion front
+`κ/(τ ∂n/∂(μ/T))` changes with temperature; prefer `ConstantKappaOverT2` or
+`ConstantDsT`, whose inputs are dimensionless.
 """
 struct ConstantChargeTransport{K,R} <: AbstractChargeTransport
     kappa::K
@@ -35,6 +41,54 @@ struct ConstantChargeTransport{K,R} <: AbstractChargeTransport
         new{typeof(k),typeof(t)}(k,t)
     end
 end
+
+"""
+    ConstantKappaOverT2(kappa_over_T2, Ctau)
+
+Diagonal charge transport with a dimensionless conductivity ratio,
+
+    κ = (κ/T²)·T²,        τ_ν = κ / [Ctau · T ∂n/∂μ],
+
+for every charge. `κ` multiplies `∇(μ/T)`, so `T ∂n/∂μ = ∂n/∂(μ/T)` is the
+susceptibility in the fugacity variable and the diffusion front speed
+
+    v_D² = κ / (τ_ν ∂n/∂(μ/T)) = Ctau
+
+is the same number at every state: `Ctau < 1` is causal by construction, the
+charge analogue of the transverse shear front `η/(τ_π w) = Ctau` of
+`ConstantEtaOverS`. The ratio `κ/T²` is the natural constant of a conformal
+plasma. With several charges `κ` is `(κ/T²)·T²·I` and `τ_ν` is the matrix
+`κ·(Ctau·T·χ)⁻¹` with `χ` the susceptibility matrix.
+"""
+struct ConstantKappaOverT2{T} <: AbstractChargeTransport
+    kappa_over_T2::T
+    Ctau::T
+end
+
+ConstantKappaOverT2(kappa_over_T2, Ctau) =
+    ConstantKappaOverT2(promote(kappa_over_T2,Ctau)...)
+
+"""
+    ConstantDsT(DsT, Ctau)
+
+Diagonal charge transport in the Einstein form of a heavy-quark or hadron
+diffusion coefficient, with the dimensionless spatial diffusion constant
+`Dₛ T` fixed:
+
+    κᵢ = Dₛ·nᵢ = (DₛT)·nᵢ/T,        τ_ν = κ / [Ctau · T ∂n/∂μ].
+
+This is the convention of Fluidum's `ConstDiffusion(DsT, mass)`, with the
+relaxation time set by the front speed `v_D² = Ctau` instead of the
+kinetic-theory Bessel-function formula. `κ` vanishes with the density, so at
+`μ = 0` of a charge-symmetric EOS this model gives no diffusion; it is meant
+for an abundance of a conserved species, such as heavy flavour.
+"""
+struct ConstantDsT{T} <: AbstractChargeTransport
+    DsT::T
+    Ctau::T
+end
+
+ConstantDsT(DsT, Ctau) = ConstantDsT(promote(DsT,Ctau)...)
 
 """
     TransportModel(shear, bulk, charge; second_order=NoSecondOrderTransport())
@@ -122,6 +176,39 @@ end
     size(model.kappa) == (N,N) && size(model.tau) == (N,N) ||
         throw(DimensionMismatch("charge transport matrices must match the number of charges"))
     ChargeState(model.kappa,model.tau)
+end
+
+# One length unit of the convention in GeV⁻¹. A quantity of dimension energy^a·length^b
+# computed in GeV is divided by energy_scale^a·(length unit)^b to land in the convention.
+@inline _length_unit_GeVinv(units::AbstractUnitSystem) = length_scale(units)/_hbarc_GeV_fm
+
+# κ = k̂·T² in the convention of `units`: T² (energy²) converted to length⁻².
+@inline _kappa_from_T2(k̂, T, units::AbstractUnitSystem) =
+    k̂*T^2*(energy_scale(units)*_length_unit_GeVinv(units))^2
+
+# κ = DₛT·n/T in the convention of `units`: n/T (length⁻³·energy⁻¹) converted to length⁻².
+@inline _kappa_from_DsT(DsT, n, T, units::AbstractUnitSystem) =
+    DsT*n/(T*energy_scale(units)*_length_unit_GeVinv(units))
+
+# Relaxation-time matrix τ_ν = κ·(Ctau·T·χ)⁻¹ from a diagonal conductivity, so that the front
+# speed κ/(τ_ν·T·χ) is Ctau in every charge direction. T·χ is ∂n/∂(μ/T) at fixed T.
+@inline function _diagonal_charge_state(kappas::SVector{N,K}, Ctau, x::GrandCanonicalPoint, th) where {N,K}
+    kappa = SMatrix{N,N,K}(ntuple(k -> (k-1) % N == (k-1) ÷ N ? kappas[(k-1) % N + 1] : zero(K), N*N))
+    N == 0 && return ChargeState(kappa,kappa)
+    tau = kappa*inv(Ctau*x.T*susceptibilities(th))
+    ChargeState(kappa,tau)
+end
+
+@inline function charge_state(model::ConstantKappaOverT2, x::GrandCanonicalPoint{T,N}, th) where {T,N}
+    κ = _kappa_from_T2(model.kappa_over_T2,x.T,unit_system(th))
+    _diagonal_charge_state(SVector{N,typeof(κ)}(ntuple(_ -> κ, N)),model.Ctau,x,th)
+end
+
+@inline function charge_state(model::ConstantDsT, x::GrandCanonicalPoint{T,N}, th) where {T,N}
+    n = charge_densities(th)
+    units = unit_system(th)
+    kappas = SVector{N}(ntuple(i -> _kappa_from_DsT(model.DsT,n[i],x.T,units), N))
+    _diagonal_charge_state(kappas,model.Ctau,x,th)
 end
 
 @inline function transport(model::TransportModel, x::GrandCanonicalPoint, th::ThermodynamicState)

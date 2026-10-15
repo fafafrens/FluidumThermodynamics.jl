@@ -321,10 +321,23 @@ The constant shear and bulk models use
 `τ = viscosity/[Ctau*(ε+p)]`. The caller supplies physically appropriate
 coefficients and states with nonzero enthalpy.
 
-`ConstantChargeTransport(κ,τ)` accepts matrices whose dimensions match the
-number of charges, including off-diagonal couplings. Plain matrices are copied
-into static matrices, as is `χ` in `PolynomialMultiChargeEOS`, so evaluation
-does not allocate.
+For the charge sector, `κ` multiplies `∇(μ/T)` and has dimension energy²,
+so only a dimensionless ratio can sensibly be held fixed. Two models do that,
+both with the relaxation time `τ_ν = κ/[Ctau·T·∂n/∂μ]`, so that the diffusion
+front `κ/(τ_ν ∂n/∂(μ/T)) = Ctau` is the same number at every state (causal
+for `Ctau < 1`, like the shear front `η/(τ_π w) = Ctau`):
+
+- `ConstantKappaOverT2(κ/T², Ctau)`: `κ = (κ/T²)·T²`, the conformal scaling.
+- `ConstantDsT(DₛT, Ctau)`: `κ = Dₛ·n = (DₛT)·n/T`, the Einstein form of
+  Fluidum's heavy-quark `ConstDiffusion`; it vanishes with the density.
+
+Both return diagonal `κ` and the matrix `τ_ν = κ·(Ctau·T·χ)⁻¹` for several
+charges, in the EOS convention (`κ` in length⁻², `τ_ν` in length).
+`ConstantChargeTransport(κ,τ)` instead accepts fixed matrices whose dimensions
+match the number of charges, including off-diagonal couplings; a fixed `κ`
+is a unit-dependent statement whose front speed drifts with temperature. Plain
+matrices are copied into static matrices, as is `χ` in
+`PolynomialMultiChargeEOS`, so evaluation does not allocate.
 `ZeroShearTransport`, `ZeroBulkTransport`, and `ZeroChargeTransport`
 disable their respective sectors.
 

@@ -68,3 +68,39 @@ end
     @test ConstantChargeTransport(S,S).kappa === S
     @test ConstantChargeTransport(ones(9,9),ones(9,9)).kappa isa Matrix
 end
+
+@testset "Dimensionless charge transport" begin
+    eos = IdealQCD()
+    hbarc = FluidumThermodynamics._hbarc_GeV_fm
+    x = GrandCanonicalPoint(0.2,0.1)
+    th = thermodynamic(eos,x)
+    chi_a = x.T*susceptibilities(th)                       # ∂n/∂(μ/T)
+    for (model, kappa_expected) in ((ConstantKappaOverT2(0.3,0.2), 0.3*x.T^2),
+                                    (ConstantDsT(0.2,0.2), 0.2*charge_density(th,1)/x.T))
+        tr = transport(TransportModel(ZeroShearTransport(),ZeroBulkTransport(),model),x,th)
+        @test size(tr.charge.kappa) == size(tr.charge.tau) == (1,1)
+        @test tr.charge.kappa[1,1] ≈ kappa_expected
+        # the diffusion front κ/(τ_ν ∂n/∂(μ/T)) is Ctau by construction
+        @test tr.charge.kappa[1,1]/(tr.charge.tau[1,1]*chi_a[1,1]) ≈ 0.2
+        # a zero-charge point has no charge sector, not an error
+        tr0 = transport(FluidModel(eos,TransportModel(ZeroShearTransport(),ZeroBulkTransport(),model)),
+                        GrandCanonicalPoint(0.2))[2]
+        @test size(tr0.charge.kappa) == (0,0)
+    end
+    # unit conventions: κ is length⁻², τ is length, the front speed is a pure number
+    fm = thermodynamic(convert_units(GeVFm(),eos),x)
+    for model in (ConstantKappaOverT2(0.3,0.2), ConstantDsT(0.2,0.2))
+        tm = TransportModel(ZeroShearTransport(),ZeroBulkTransport(),model)
+        nat, gevfm = transport(tm,x,th), transport(tm,x,fm)
+        @test gevfm.charge.kappa[1,1] ≈ nat.charge.kappa[1,1]/hbarc^2
+        @test gevfm.charge.tau[1,1] ≈ nat.charge.tau[1,1]*hbarc
+        @test gevfm.charge.kappa[1,1]/(gevfm.charge.tau[1,1]*x.T*susceptibilities(fm)[1,1]) ≈ 0.2
+    end
+    # several charges: diagonal κ, matrix τ_ν with κ·(Ctau·T·χ)⁻¹
+    eos2 = PolynomialMultiChargeEOS(3.0, SMatrix{2,2}(1.0,0.2,0.2,0.8))
+    x2 = GrandCanonicalPoint(0.2,0.05,-0.03)
+    th2 = thermodynamic(eos2,x2)
+    tr2 = transport(TransportModel(ZeroShearTransport(),ZeroBulkTransport(),ConstantKappaOverT2(0.3,0.2)),x2,th2)
+    @test tr2.charge.kappa ≈ 0.3*x2.T^2*I
+    @test tr2.charge.tau*(0.2*x2.T*susceptibilities(th2)) ≈ tr2.charge.kappa
+end
