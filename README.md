@@ -184,6 +184,14 @@ th.pressure  # MeV/fm³
 | Pressure, energy density | GeV⁴ | GeV/fm³ | MeV/fm³ |
 | Entropy and charge densities | GeV³ | fm⁻³ | fm⁻³ |
 | Pressure Hessian | GeV² | GeV⁻¹ fm⁻³ | MeV⁻¹ fm⁻³ |
+| Viscosities η, ζ | GeV³ | fm⁻³ | fm⁻³ |
+| Conductivity κ | GeV² | fm⁻² | fm⁻² |
+| Relaxation times τπ, τΠ, τ_ν | GeV⁻¹ | fm | fm |
+
+`hbarc(units)` is ℏc in the convention's units (1, 0.1973 GeV fm,
+197.3 MeV fm); a quantity computed with ℏ = c = 1 that carries lengthᵇ is
+multiplied by `hbarc(units)^b`, which is how the transport coefficients and
+`unit_scale = hbarc^-3` are obtained.
 
 To change conventions explicitly:
 
@@ -318,8 +326,9 @@ th,tr = transport(FluidModel(eos,model),x)
 `FluidModel` is an EOS/transport container; it does not evolve a fluid.
 The constant shear and bulk models use
 `η = (η/s)*s`, `ζ = (ζ/s)*s`, and
-`τ = viscosity/[Ctau*(ε+p)]`. The caller supplies physically appropriate
-coefficients and states with nonzero enthalpy.
+`τ = viscosity/[Ctau*(ε+p)]`, with `τ` in the length unit of the convention
+like `τ_ν`. The caller supplies physically appropriate coefficients and
+states with nonzero enthalpy.
 
 For the charge sector, `κ` multiplies `∇(μ/T)` and has dimension energy²,
 so only a dimensionless ratio can sensibly be held fixed. Two models do that,
