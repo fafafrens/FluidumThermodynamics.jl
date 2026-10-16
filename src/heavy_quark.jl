@@ -46,19 +46,15 @@ end
 # Charm mass in the EOS energy unit, used by `CharmTransport`.
 @inline heavy_quark_mass(eos::HeavyQuark) = eos.charm.particles[1].mass
 
-@inline function _check_heavy_quark_charges(M)
-    M <= 1 || throw(DimensionMismatch("HeavyQuark carries a single charge; the point has $M chemical potentials"))
-end
-
-# The quark gas takes the point as is: an omitted chemical potential is zero.
+# The quark gas takes the point as is: an omitted chemical potential is zero,
+# and it rejects points with more than one charge.
 @inline function pressure(eos::HeavyQuark, x::GrandCanonicalPoint{R,M}) where {R,M}
-    _check_heavy_quark_charges(M)
+    M <= 1 || throw(DimensionMismatch("HeavyQuark carries a single charge; the point has $M chemical potentials"))
     p = pressure(eos.bulk,GrandCanonicalPoint(x.T))
     backreaction(eos) ? p + pressure(eos.charm,x) : p
 end
 
 function thermodynamic(eos::HeavyQuark, x::GrandCanonicalPoint{R,M}) where {R,M}
-    _check_heavy_quark_charges(M)
     bulk = thermodynamic(eos.bulk,GrandCanonicalPoint(x.T))
     charm = thermodynamic(eos.charm,x)
     if backreaction(eos)
