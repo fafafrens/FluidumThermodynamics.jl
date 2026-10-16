@@ -48,8 +48,7 @@ end
 
 # The quark gas takes the point as is: an omitted chemical potential is zero,
 # and it rejects points with more than one charge.
-@inline function pressure(eos::HeavyQuark, x::GrandCanonicalPoint{R,M}) where {R,M}
-    M <= 1 || throw(DimensionMismatch("HeavyQuark carries a single charge; the point has $M chemical potentials"))
+@inline function pressure(eos::HeavyQuark, x::GrandCanonicalPoint)
     p = pressure(eos.bulk,GrandCanonicalPoint(x.T))
     backreaction(eos) ? p + pressure(eos.charm,x) : p
 end
