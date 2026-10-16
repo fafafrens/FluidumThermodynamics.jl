@@ -42,6 +42,9 @@ struct ConstantChargeTransport{K,R} <: AbstractChargeTransport
     end
 end
 
+# `CharmTransport`, the free heavy-quark diffusion model, lives in heavy_quark.jl
+# next to the `HeavyQuark` EOS it depends on.
+
 """
     ConstantKappaOverT2(kappa_over_T2, Ctau)
 
@@ -192,7 +195,7 @@ end
 # Relaxation-time matrix τ_ν = κ·(Ctau·T·χ)⁻¹ from a diagonal conductivity, so that the front
 # speed κ/(τ_ν·T·χ) is Ctau in every charge direction. T·χ is ∂n/∂(μ/T) at fixed T.
 @inline function _diagonal_charge_state(kappas::SVector{N,K}, Ctau, x::GrandCanonicalPoint, th) where {N,K}
-    kappa = SMatrix{N,N,K}(ntuple(k -> (k-1) % N == (k-1) ÷ N ? kappas[(k-1) % N + 1] : zero(K), N*N))
+    kappa = SMatrix{N,N,K}(Diagonal(kappas))
     N == 0 && return ChargeState(kappa,kappa)
     tau = kappa*inv(Ctau*x.T*susceptibilities(th))
     ChargeState(kappa,tau)
