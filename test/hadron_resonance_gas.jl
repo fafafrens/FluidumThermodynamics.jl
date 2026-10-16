@@ -74,4 +74,19 @@ end
     @test_throws ArgumentError HadronResonanceGas([])
     @test_throws ArgumentError HadronResonanceGas(pair.particles; terms=0)
     @test_throws DimensionMismatch HadronResonanceGas([HadronSpecies(0.14,1),HadronSpecies(0.938,2,(1,))])
+
+    @testset "HeavyQuark" begin
+        hq = HeavyQuark()
+        @test hq isa HadronResonanceGas
+        species = only(hq.particles)
+        @test species.mass == 1.5
+        @test species.degeneracy == 6
+        @test species.charges == SVector(1.0)
+        @test species.statistics == 0
+        T,μ = 0.3,0.1
+        z = 1.5/T
+        expected = 6*1.5^2*T^2/(2*pi^2)*FluidumThermodynamics.besselkx(2,z)*exp(-z)*exp(μ/T)
+        @test pressure(hq,GrandCanonicalPoint(T,SVector(μ))) ≈ expected
+        @test HeavyQuark(mass=1.3).particles[1].mass == 1.3
+    end
 end

@@ -43,6 +43,35 @@ struct ConstantChargeTransport{K,R} <: AbstractChargeTransport
 end
 
 """
+    CharmTransport(eos, DsT, charge=1)
+
+Free (Boltzmann) charm diffusion with spatial diffusion coefficient `D_s`.
+`eos` is a single-species heavy-quark EOS such as `HeavyQuark()`; its species
+mass is the charm mass, in the EOS energy unit. `DsT` is the dimensionless
+`D_s*T`, either a number or a callable `T -> D_s*T`. With `n` the charm
+density of `eos` evaluated at `(T, μ[charge])` and `z = mass/T`,
+
+    κ = (D_s T)/T * n
+    τ = (D_s T) * z^3/(48T) * (2K₁(z) - 3K₃(z) + K₅(z))/K₂(z)
+
+so τ → D_s*mass/T for heavy quarks. Only the `[charge,charge]` entries are
+nonzero. Coefficients use ħ = c = 1 in the EOS energy convention.
+"""
+struct CharmTransport{E<:AbstractEquationOfState,D} <: AbstractChargeTransport
+    eos::E
+    DsT::D
+    charge::Int
+    function CharmTransport(eos::AbstractEquationOfState, DsT, charge::Integer=1)
+        charge >= 1 || throw(ArgumentError("charm charge index must be positive"))
+        heavy_quark_mass(eos)  # validates that the EOS has a single species
+        new{typeof(eos),typeof(DsT)}(eos,DsT,Int(charge))
+    end
+end
+
+@inline _diffusion_DsT(DsT::Real, T) = DsT
+@inline _diffusion_DsT(DsT, T) = DsT(T)
+
+"""
     ConstantKappaOverT2(kappa_over_T2, Ctau)
 
 Diagonal charge transport with a dimensionless conductivity ratio,
@@ -176,6 +205,28 @@ end
     size(model.kappa) == (N,N) && size(model.tau) == (N,N) ||
         throw(DimensionMismatch("charge transport matrices must match the number of charges"))
     ChargeState(model.kappa,model.tau)
+end
+
+@inline function charge_state(model::CharmTransport, x::GrandCanonicalPoint{T,N}, th) where {T,N}
+    c = model.charge
+    c <= N || throw(DimensionMismatch("charm charge index must not exceed the number of charges"))
+    temperature = x.T
+    DsT = _diffusion_DsT(model.DsT,temperature)
+    z = heavy_quark_mass(model.eos)/temperature
+    # Scaled Bessel functions: the common e^z factor cancels in the ratio.
+    b1, b2 = besselkx(1,z), besselkx(2,z)
+    b3 = muladd(4/z,b2,b1)
+    b4 = muladd(6/z,b3,b2)
+    b5 = muladd(8/z,b4,b3)
+    # The charm density comes from the heavy-quark EOS, not from the fluid's `th`.
+    hq = thermodynamic(model.eos, GrandCanonicalPoint(temperature, SVector(x.μ[c])))
+    kappa = DsT/temperature*charge_density(hq,1)
+    tau = DsT*z^3/(48*temperature)*(2*b1-3*b3+b5)/b2
+    k, t = promote(kappa,tau)
+    i = (c-1)*N+c
+    K = SMatrix{N,N}(ntuple(j -> j == i ? k : zero(k), Val(N*N)))
+    R = SMatrix{N,N}(ntuple(j -> j == i ? t : zero(t), Val(N*N)))
+    ChargeState(K,R)
 end
 
 # One length unit of the convention in GeV⁻¹. A quantity of dimension energy^a·length^b

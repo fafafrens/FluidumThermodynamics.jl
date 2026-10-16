@@ -97,3 +97,19 @@ function thermodynamic(eos::HadronResonanceGas{U,E,N},
 end
 
 pressure(eos::HadronResonanceGas,x::GrandCanonicalPoint) = thermodynamic(eos,x).pressure
+
+"""
+    HeavyQuark(; mass=1.5, units=NaturalGeV())
+
+Boltzmann gas of a single heavy-quark species with degeneracy 6 (spin × color)
+and unit charge, implemented as a one-species `HadronResonanceGas`. The mass
+uses the selected energy unit. Antiquarks are not included.
+"""
+HeavyQuark(; mass=1.5, units::AbstractUnitSystem=NaturalGeV()) =
+    HadronResonanceGas([HadronSpecies(mass,6,(1,); statistics=:boltzmann)]; units)
+
+# Charm mass of a single-species heavy-quark EOS, used by `CharmTransport`.
+function heavy_quark_mass(eos::HadronResonanceGas)
+    length(eos.particles) == 1 || throw(ArgumentError("heavy-quark EOS must contain exactly one species"))
+    eos.particles[1].mass
+end

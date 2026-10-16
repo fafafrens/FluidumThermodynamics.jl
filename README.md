@@ -321,6 +321,20 @@ The constant shear and bulk models use
 `τ = viscosity/[Ctau*(ε+p)]`. The caller supplies physically appropriate
 coefficients and states with nonzero enthalpy.
 
+`ConstantChargeTransport(κ,τ)` accepts matrices whose dimensions match the
+number of charges, including off-diagonal couplings. Plain matrices are copied
+into static matrices, as is `χ` in `PolynomialMultiChargeEOS`, so evaluation
+does not allocate.
+`CharmTransport(eos,DsT,charge=1)` is the free (Boltzmann) charm
+prescription of Fluidum, where `eos` is a single-species heavy-quark EOS such
+as `HeavyQuark()` whose species mass `m` is the charm mass:
+`κ = (D_s T)/T * n` with `n` the charm density of `eos` at `(T, μ[charge])`
+(not the fluid EOS density), and
+`τ = (D_s T) * z^3/(48T) * (2K₁ - 3K₃ + K₅)/K₂` with `z = m/T`, which tends
+to `D_s m/T` for heavy quarks. `DsT` is the dimensionless `D_s T`, either a
+number or a function of `T`. The mass is in the EOS energy unit, and only the
+`[charge,charge]` entries are nonzero. As in the shear and bulk models,
+ħ = c = 1, so no ħc factors are applied.
 For the charge sector, `κ` multiplies `∇(μ/T)` and has dimension energy²,
 so only a dimensionless ratio can sensibly be held fixed. Two models do that,
 both with the relaxation time `τ_ν = κ/[Ctau·T·∂n/∂μ]`, so that the diffusion
