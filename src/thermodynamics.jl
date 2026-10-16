@@ -183,7 +183,8 @@ With no charges this is `s/(T ∂s/∂T)`. Velocities are in units of `c`.
 @inline function speed_of_sound_squared(x::GrandCanonicalPoint, th::ThermodynamicState)
     dp = pressure_derivatives(x,th)
     n = charge_densities(th)
-    dp[1] + dot(n, dp[2:end])/enthalpy(x,th)
+    # Static slice: `dp[2:end]` would build a Vector (allocates on Julia 1.10).
+    dp[1] + dot(n, StaticArrays.popfirst(dp))/enthalpy(x,th)
 end
 
 for f in (:enthalpy, :trace_anomaly, :pressure_derivatives, :speed_of_sound_squared)

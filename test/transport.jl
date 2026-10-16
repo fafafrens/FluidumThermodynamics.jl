@@ -104,3 +104,130 @@ end
     @test tr2.charge.kappa ≈ 0.3*x2.T^2*I
     @test tr2.charge.tau*(0.2*x2.T*susceptibilities(th2)) ≈ tr2.charge.kappa
 end
+
+function functional_allocations(fluid, x)
+    transport(fluid,x)
+    @allocated(transport(fluid,x))
+end
+
+@testset "State-dependent shear and bulk" begin
+    eos = FluidumEOS()
+    x = GrandCanonicalPoint(0.2)
+    th = thermodynamic(eos,x)
+    s, w = entropy_density(th), enthalpy(x,th)
+    ηs = (x,th) -> 0.08 + 1.1*(x.T-0.155)
+    Cτ = (x,th) -> 5.0 + 10*x.T
+    ζs = (x,th) -> 0.03/(1+((x.T-0.175)/0.024)^2)
+    # Numbers give exactly the constant models.
+    same = transport(TransportModel(EtaOverS(0.16,5.0),ZetaOverS(0.03,10.0),ZeroChargeTransport()),x,th)
+    ref = transport(TransportModel(ConstantEtaOverS(0.16,5.0),ConstantZetaOverS(0.03,10.0),ZeroChargeTransport()),x,th)
+    @test same.shear == ref.shear && same.bulk == ref.bulk
+    @test EtaOverS(0.16,5.0).eta_over_s(x,th) == 0.16
+    # Mixed number types promote in the constant models.
+    @test ConstantEtaOverS(0.16,5) == ConstantEtaOverS(0.16,5.0)
+    @test transport(TransportModel(EtaOverS(0.16,5),ZetaOverS(3//100,10),ZeroChargeTransport()),x,th).shear == ref.shear
+    # Callables see the point and the state.
+    tr = transport(TransportModel(EtaOverS(ηs,Cτ),ZetaOverS(ζs,10),ZeroChargeTransport()),x,th)
+    @test tr.shear.eta ≈ ηs(x,th)*s
+    @test tr.shear.tau ≈ tr.shear.eta/(Cτ(x,th)*w)
+    @test tr.bulk.zeta ≈ ζs(x,th)*s
+    @test tr.bulk.tau ≈ tr.bulk.zeta/(10*w)
+    x2 = GrandCanonicalPoint(0.3)
+    th2 = thermodynamic(eos,x2)
+    tr2 = transport(TransportModel(EtaOverS(ηs,Cτ),ZetaOverS(ζs,10),ZeroChargeTransport()),x2,th2)
+    @test tr2.shear.eta/entropy_density(th2) ≈ ηs(x2,th2)
+    linear = FluidModel(eos,TransportModel(EtaOverS(ηs,Cτ),ZetaOverS(ζs,10.0),ZeroChargeTransport()))
+    @inferred transport(linear,x)
+    @test functional_allocations(linear,x) == 0
+    # Dependence on the chemical potential and on the state itself.
+    qcd = IdealQCD()
+    y = GrandCanonicalPoint(0.2,0.3)
+    thy = thermodynamic(qcd,y)
+    ημ = (x,th) -> 0.1*(1 + (x.μ[1]/x.T)^2)
+    Cs = (x,th) -> 5.0*entropy_density(th)/charge_density(th,1)
+    try_ = transport(TransportModel(EtaOverS(ημ,Cs),ZeroBulkTransport(),ZeroChargeTransport()),y,thy)
+    @test try_.shear.eta ≈ 0.1*(1+(0.3/0.2)^2)*entropy_density(thy)
+    @test try_.shear.tau ≈ try_.shear.eta/(Cs(y,thy)*enthalpy(y,thy))
+    charged = FluidModel(qcd,TransportModel(EtaOverS(ημ,Cs),ZetaOverS(ζs,10.0),ZeroChargeTransport()))
+    @inferred transport(charged,y)
+    @test functional_allocations(charged,y) == 0
+    # Functional sectors return the state directly, e.g. a Fluidum-like bulk
+    # relaxation time with the speed of sound and a floor.
+    shear = FunctionalShearTransport((x,th) -> ShearState(0.16*entropy_density(th),0.5))
+    # (`ent`, not `s`: assigning to a name of the enclosing scope would box it.)
+    bulk = FunctionalBulkTransport((x,th) -> begin
+        ent = entropy_density(th)
+        ζ = ζs(x,th)*ent
+        BulkState(ζ,ζ/(10*x.T*ent)/(1/3-speed_of_sound_squared(x,th))^2 + 0.5)
+    end)
+    fluid = FluidModel(eos,TransportModel(shear,bulk,ZeroChargeTransport()))
+    thf, trf = @inferred transport(fluid,x)
+    @test trf.shear.eta ≈ 0.16*s && trf.shear.tau == 0.5
+    @test trf.bulk.zeta ≈ ζs(x,th)*s
+    @test trf.bulk.tau ≈ trf.bulk.zeta/(10*x.T*s)/(1/3-speed_of_sound_squared(x,th))^2 + 0.5
+    @test functional_allocations(fluid,x) == 0
+    @test_throws ArgumentError transport(FluidModel(eos,TransportModel(FunctionalShearTransport((x,th) -> (1.0,2.0)),ZeroBulkTransport(),ZeroChargeTransport())),x)
+    @test_throws ArgumentError transport(FluidModel(eos,TransportModel(ZeroShearTransport(),FunctionalBulkTransport((x,th) -> nothing),ZeroChargeTransport())),x)
+end
+
+@testset "State-dependent diffusion" begin
+    eos = IdealQCD()
+    x = GrandCanonicalPoint(0.2,0.1)
+    th = thermodynamic(eos,x)
+    zero_sectors(charge) = TransportModel(ZeroShearTransport(),ZeroBulkTransport(),charge)
+    # Numbers give exactly ConstantDsT.
+    same = transport(zero_sectors(EinsteinDiffusion(0.2,1.0)),x,th)
+    ref = transport(zero_sectors(ConstantDsT(0.2,1.0)),x,th)
+    @test same.charge == ref.charge
+    # Fluidum's LinearDiffusion: DₛT linear in T above Tc.
+    linear = (x,th) -> ifelse(x.T > 0.18, 1.2*x.T + 0.05, 1.2*0.18 + 0.05)
+    tr = transport(zero_sectors(EinsteinDiffusion(linear,1.0)),x,th)
+    @test tr.charge == transport(zero_sectors(ConstantDsT(linear(x,th),1.0)),x,th).charge
+    fluid = FluidModel(eos,zero_sectors(EinsteinDiffusion(linear,(x,th) -> 0.5 + x.T)))
+    @inferred transport(fluid,x)
+    @test functional_allocations(fluid,x) == 0
+    # Fluidum's free heavy-quark relaxation time as a state-dependent Ctau on a
+    # Boltzmann gas, where T·∂n/∂μ = n: τ = DₛT z³/(48T) (2K₁-3K₃+K₅)/K₂.
+    m, DsT = 1.5, 0.2
+    hq = HadronResonanceGas([HadronSpecies(m,6,(1,))])
+    y = GrandCanonicalPoint(0.2,0.03)
+    bk = (ν,z) -> FluidumThermodynamics.besselkx(ν,z)
+    charm_Ctau = (x,th) -> begin
+        zz = m/x.T
+        48*bk(2,zz)/(zz^3*(2*bk(1,zz)-3*bk(3,zz)+bk(5,zz)))
+    end
+    charm = FluidModel(hq,zero_sectors(EinsteinDiffusion(DsT,charm_Ctau)))
+    thc, trc = @inferred transport(charm,y)
+    z = m/y.T
+    @test trc.charge.kappa[1,1] ≈ DsT/y.T*charge_density(thc,1)
+    @test trc.charge.tau[1,1] ≈ DsT*z^3/(48*y.T)*(2*bk(1,z)-3*bk(3,z)+bk(5,z))/bk(2,z)
+end
+
+# A callable struct that closes over the charm hadron list, from the example.
+include(joinpath(@__DIR__,"..","examples","hadronic_charm_diffusion.jl"))
+
+@testset "Callable structs close over data" begin
+    DsT = 0.2
+    zero_sectors(charge) = TransportModel(ZeroShearTransport(),ZeroBulkTransport(),charge)
+    bk = (ν,z) -> FluidumThermodynamics.besselkx(ν,z)
+    τ̂(m,T) = (z = m/T; z^3/(48*T)*(2*bk(1,z)-3*bk(3,z)+bk(5,z))/bk(2,z))
+    y = GrandCanonicalPoint(0.2,0.03)
+    # One species: Fluidum's free heavy-quark relaxation time.
+    quark = [HadronSpecies(1.5,6,(1,))]
+    one = FluidModel(HadronResonanceGas(quark),zero_sectors(EinsteinDiffusion(DsT,CharmHadronCtau(quark))))
+    th1, tr1 = @inferred transport(one,y)
+    @test tr1.charge.tau[1,1] ≈ DsT*τ̂(1.5,y.T)
+    @test tr1.charge.kappa[1,1] ≈ DsT/y.T*charge_density(th1,1)
+    # Several hadrons, including a q = 2 state: κ from the total charm density and
+    # τ the χ-weighted mean of the single-species values, as in Fluidum.
+    hadrons = [HadronSpecies(1.87,2,(1,)),HadronSpecies(2.29,2,(1,)),HadronSpecies(3.1,3,(2,))]
+    eos = HadronResonanceGas(hadrons)
+    th = thermodynamic(eos,y)
+    tr = transport(zero_sectors(EinsteinDiffusion(DsT,CharmHadronCtau(hadrons))),y,th)
+    qs = [s.charges[1] for s in hadrons]
+    ns = [charge_density(thermodynamic(HadronResonanceGas([s]),y),1) for s in hadrons]./qs
+    @test y.T*susceptibility(th,1,1) ≈ sum(qs.^2 .* ns)
+    @test tr.charge.kappa[1,1] ≈ DsT/y.T*charge_density(th,1)
+    @test tr.charge.tau[1,1] ≈ DsT*sum(qs.^2 .* ns .* [τ̂(s.mass,y.T) for s in hadrons])/sum(qs.^2 .* ns)
+    @inferred transport(FluidModel(eos,zero_sectors(EinsteinDiffusion(DsT,CharmHadronCtau(hadrons)))),y)
+end
