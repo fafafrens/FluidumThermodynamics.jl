@@ -22,7 +22,7 @@ julia --project=. -e 'using Pkg; Pkg.instantiate(); Pkg.test()'
 julia --project=. examples/multicharge.jl
 ```
 
-The package is unregistered. Its dependencies are ForwardDiff, StaticArrays, SpecialFunctions,
+The package is unregistered. Its dependencies are ForwardDiff, StaticArrays, Bessels,
 and the LinearAlgebra standard library.
 
 ## Thermodynamics
@@ -331,6 +331,25 @@ form, for instance a `τΠ` that depends on the speed of sound or has a floor,
 same `f(x,th)` and expect a `ShearState(η,τπ)` or `BulkState(ζ,τΠ)` in
 return, like `FunctionalSecondOrderTransport` for the second-order sector.
 
+`ConstantChargeTransport(κ,τ)` accepts matrices whose dimensions match the
+number of charges, including off-diagonal couplings. Plain matrices are copied
+into static matrices, as is `χ` in `PolynomialMultiChargeEOS`, so evaluation
+does not allocate.
+`HeavyQuark(; mass=1.5, bulk=FluidumEOS())` is the analogue of Fluidum's
+`Heavy_Quark`: a bulk EOS, evaluated at zero chemical potential, carrying one
+heavy-quark charge whose density and susceptibility come from a Boltzmann gas
+of the quark (degeneracy 6, mass `m`). By default the quark pressure is added
+to the bulk, so the state derives from a single potential;
+`backreaction=false` reproduces Fluidum, where the quark gas does not
+back-react on the bulk. `CharmTransport(hq,DsT)` (or `CharmTransport(m,DsT)`) is the free
+(Boltzmann) charm prescription of Fluidum: `ConstantDsT` with the relaxation
+time set by the kinetic-theory Bessel formula instead of a fixed front speed,
+`Ctau = 48K₂/[z³(2K₁ - 3K₃ + K₅)]` with `z = m/T`. For a Boltzmann gas this
+is `τ = (D_s T) * z^3/(48T) * (2K₁ - 3K₃ + K₅)/K₂`, which tends to `D_s m/T`
+for heavy quarks. `DsT` is the dimensionless `D_s T`, either a number or a
+function of `T`; the mass is in the EOS energy unit. As for `ConstantDsT`,
+κ applies to every charge of the fluid, and κ and τ follow the unit
+convention of the state.
 For the charge sector, `κ` multiplies `∇(μ/T)` and has dimension energy²,
 so only a dimensionless ratio can sensibly be held fixed. Two models do that,
 both with the relaxation time `τ_ν = κ/[Ctau·T·∂n/∂μ]`, so that the diffusion
