@@ -22,7 +22,7 @@ julia --project=. -e 'using Pkg; Pkg.instantiate(); Pkg.test()'
 julia --project=. examples/multicharge.jl
 ```
 
-The package is unregistered. Its dependencies are ForwardDiff, StaticArrays, SpecialFunctions,
+The package is unregistered. Its dependencies are ForwardDiff, StaticArrays, Bessels,
 and the LinearAlgebra standard library.
 
 ## Thermodynamics
@@ -325,16 +325,21 @@ coefficients and states with nonzero enthalpy.
 number of charges, including off-diagonal couplings. Plain matrices are copied
 into static matrices, as is `χ` in `PolynomialMultiChargeEOS`, so evaluation
 does not allocate.
-`CharmTransport(eos,DsT,charge=1)` is the free (Boltzmann) charm
-prescription of Fluidum, where `eos` is a single-species heavy-quark EOS such
-as `HeavyQuark()` whose species mass `m` is the charm mass:
-`κ = (D_s T)/T * n` with `n` the charm density of `eos` at `(T, μ[charge])`
-(not the fluid EOS density), and
-`τ = (D_s T) * z^3/(48T) * (2K₁ - 3K₃ + K₅)/K₂` with `z = m/T`, which tends
-to `D_s m/T` for heavy quarks. `DsT` is the dimensionless `D_s T`, either a
-number or a function of `T`. The mass is in the EOS energy unit, and only the
-`[charge,charge]` entries are nonzero. As in the shear and bulk models,
-ħ = c = 1, so no ħc factors are applied.
+`HeavyQuark(; mass=1.5, bulk=FluidumEOS())` is the analogue of Fluidum's
+`Heavy_Quark`: a bulk EOS, evaluated at zero chemical potential, carrying one
+heavy-quark charge whose density and susceptibility come from a Boltzmann gas
+of the quark (degeneracy 6, mass `m`). By default the quark pressure is added
+to the bulk, so the state derives from a single potential;
+`backreaction=false` reproduces Fluidum, where the quark gas does not
+back-react on the bulk. `CharmTransport(hq,DsT)` (or `CharmTransport(m,DsT)`) is the free
+(Boltzmann) charm prescription of Fluidum: `ConstantDsT` with the relaxation
+time set by the kinetic-theory Bessel formula instead of a fixed front speed,
+`Ctau = 48K₂/[z³(2K₁ - 3K₃ + K₅)]` with `z = m/T`. For a Boltzmann gas this
+is `τ = (D_s T) * z^3/(48T) * (2K₁ - 3K₃ + K₅)/K₂`, which tends to `D_s m/T`
+for heavy quarks. `DsT` is the dimensionless `D_s T`, either a number or a
+function of `T`; the mass is in the EOS energy unit. As for `ConstantDsT`,
+κ applies to every charge of the fluid, and κ and τ follow the unit
+convention of the state.
 For the charge sector, `κ` multiplies `∇(μ/T)` and has dimension energy²,
 so only a dimensionless ratio can sensibly be held fixed. Two models do that,
 both with the relaxation time `τ_ν = κ/[Ctau·T·∂n/∂μ]`, so that the diffusion
