@@ -72,43 +72,46 @@ function thermodynamic(eos::HeavyQuark, x::GrandCanonicalPoint{R,M}) where {R,M}
 end
 
 """
-    CharmTransport(mass, DsT)
-    CharmTransport(hq::HeavyQuark, DsT)
+    CharmCtau(mass)
 
-Free (Boltzmann) heavy-quark diffusion, the prescription of Fluidum. It is
-`ConstantDsT` with the relaxation time set by the kinetic-theory Bessel
-formula instead of a fixed front speed: at each state
+Relaxation-time parameter `Ctau(x, th)` of free (Boltzmann) heavy-quark
+diffusion for `EinsteinDiffusion`, Fluidum's kinetic-theory formula
 
     Ctau = 48 K₂(z) / (z³ (2K₁(z) - 3K₃(z) + K₅(z))),   z = mass/T
 
-For a Boltzmann gas, where `T·∂n/∂μ = n`, this gives Fluidum's
+For a Boltzmann gas, where `T·∂n/∂μ = n`, this gives
 `τ = DₛT·z³/(48T)·(2K₁ - 3K₃ + K₅)/K₂`, which tends to `Dₛ·mass/T` for heavy
-quarks. As for `ConstantDsT`, `κ = DₛT·n/T` from the state's densities
-applies to every charge of the fluid, in the unit convention of the state;
-the model is meant for a fluid whose charge is the heavy quark, such as
-`HeavyQuark`, from which the mass can be taken directly. `DsT` is the
-dimensionless `DₛT`, a number or a callable `T -> DₛT`; `mass` is in the EOS
-energy unit.
+quarks. `mass` is in the EOS energy unit.
 """
-struct CharmTransport{M,D} <: AbstractChargeTransport
+struct CharmCtau{M}
     mass::M
-    DsT::D   # callable T -> DₛT
-    function CharmTransport(mass::Real, DsT)
+    function CharmCtau(mass::Real)
         isfinite(mass) && mass > 0 || throw(ArgumentError("heavy-quark mass must be finite and positive"))
-        new{typeof(mass),typeof(DsT)}(mass,DsT)
+        new{typeof(mass)}(mass)
     end
 end
 
-CharmTransport(mass::Real, DsT::Real) = CharmTransport(mass,Returns(DsT))
-CharmTransport(hq::HeavyQuark, DsT) = CharmTransport(heavy_quark_mass(hq),DsT)
-
-@inline function charge_state(model::CharmTransport, x::GrandCanonicalPoint, th)
-    z = model.mass/x.T
+@inline function (c::CharmCtau)(x, th)
+    z = c.mass/x.T
     # Scaled Bessel functions: the common e^z factor cancels in the ratio.
     b1, b2 = besselkx(1,z), besselkx(2,z)
     b3 = muladd(4/z,b2,b1)
     b4 = muladd(6/z,b3,b2)
     b5 = muladd(8/z,b4,b3)
-    Ctau = 48*b2/(z^3*(2*b1-3*b3+b5))
-    charge_state(ConstantDsT(model.DsT(x.T),Ctau),x,th)
+    48*b2/(z^3*(2*b1-3*b3+b5))
 end
+
+"""
+    CharmTransport(mass, DsT)
+    CharmTransport(hq::HeavyQuark, DsT)
+
+Free (Boltzmann) heavy-quark diffusion, the prescription of Fluidum:
+`EinsteinDiffusion(DsT, CharmCtau(mass))`, that is `κ = DₛT·n/T` from the
+state's densities for every charge of the fluid, with the relaxation time of
+`CharmCtau`, in the unit convention of the state. The model is meant for a
+fluid whose charge is the heavy quark, such as `HeavyQuark`, from which the
+mass can be taken directly. `DsT` is the dimensionless `DₛT`, a number or a
+callable `(x, th)` as in `EinsteinDiffusion`.
+"""
+CharmTransport(mass::Real, DsT) = EinsteinDiffusion(DsT,CharmCtau(mass))
+CharmTransport(hq::HeavyQuark, DsT) = CharmTransport(heavy_quark_mass(hq),DsT)
