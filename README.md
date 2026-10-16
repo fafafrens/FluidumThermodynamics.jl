@@ -330,6 +330,16 @@ The constant shear and bulk models use
 `viscosity/[Ctau*(ε+p)]` expressed in the length unit of the convention,
 like `τ_ν` (the factor is 1 in `NaturalGeV`). The caller supplies physically
 appropriate coefficients and states with nonzero enthalpy.
+`EtaOverS(η/s,Ctau)` and `ZetaOverS(ζ/s,Ctau)` are the same models with
+state-dependent inputs: each argument is a number or a function `(x,th)` of
+the grand-canonical point (`x.T`, `x.μ`) and the thermodynamic state, in the
+fluid's unit convention, for example
+`EtaOverS((x,th) -> 0.08 + 1.1*(x.T-0.155), 5.0)` or an `η/s` that grows
+with `x.μ[1]/x.T`. When the viscosity or the relaxation time is not of this
+form, for instance a `τΠ` that depends on the speed of sound or has a floor,
+`FunctionalShearTransport(f)` and `FunctionalBulkTransport(f)` evaluate the
+same `f(x,th)` and expect a `ShearState(η,τπ)` or `BulkState(ζ,τΠ)` in
+return, like `FunctionalSecondOrderTransport` for the second-order sector.
 
 `ConstantChargeTransport(κ,τ)` accepts matrices whose dimensions match the
 number of charges, including off-diagonal couplings. Plain matrices are copied
@@ -359,6 +369,29 @@ for `Ctau < 1`, like the shear front `hbarc·η/(τ_π w) = Ctau`):
 - `ConstantKappaOverT2(κ/T², Ctau)`: `κ = (κ/T²)·T²`, the conformal scaling.
 - `ConstantDsT(DₛT, Ctau)`: `κ = Dₛ·n = (DₛT)·n/T`, the Einstein form of
   Fluidum's heavy-quark `ConstDiffusion`; it vanishes with the density.
+- `EinsteinDiffusion(DₛT, Ctau)`: the same with state-dependent inputs,
+  each a number or a function `(x,th)` as in `EtaOverS`; Fluidum's
+  `LinearDiffusion` is a `DₛT` linear in `x.T`, and its free heavy-quark
+  relaxation time is a `Ctau` built from the Bessel-function formula.
+
+Any callable works, including a struct with a call method that closes over
+data. `examples/hadronic_charm_diffusion.jl` builds Fluidum's hadronic charm
+relaxation time that way: a struct holds the charm hadron list, and its
+`Ctau(x,th)` makes `τ` the χ-weighted mean `Σq²nᵢτᵢ/Σq²nᵢ` of the
+single-species relaxation times, with `q` the heavy-quark count of each
+hadron:
+
+```julia
+struct CharmHadronCtau{T}
+    species::Vector{HadronSpecies{T,1}}
+end
+function (c::CharmHadronCtau)(x, th)
+    # loop over c.species: Σqn and Σq²nᵢτ̂ᵢ from masses, degeneracies and x
+    ...
+    density/(x.T*weighted)        # Ctau = κ/(τ·T·∂n/∂μ) with T·∂n/∂μ = Σq²n
+end
+model = EinsteinDiffusion(0.2,CharmHadronCtau(charm_hadrons))
+```
 
 Both return diagonal `κ` and the matrix `τ_ν = κ·(Ctau·T·χ)⁻¹` for several
 charges, in the EOS convention (`κ` in length⁻², `τ_ν` in length).
@@ -412,7 +445,9 @@ The default `NoSecondOrderTransport()` yields `tr.second_order === nothing`;
 relaxation times remain in their existing sectors.
 See the [second-order guide](docs/second_order.md) for the shape rules,
 example equations, and extension interface, and run
-`julia --project=. examples/second_order.jl` for a two-charge example.
+`julia --project=. examples/second_order.jl` for a two-charge example, and
+`julia --project=. examples/hadronic_charm_diffusion.jl` for a state-dependent
+charm relaxation time from a hadron list.
 
 ## Provenance and validation
 

@@ -19,6 +19,68 @@ struct ConstantZetaOverS{T} <: AbstractBulkTransport
     Ctau::T
 end
 
+ConstantEtaOverS(eta_over_s, Ctau) = ConstantEtaOverS(promote(eta_over_s,Ctau)...)
+ConstantZetaOverS(zeta_over_s, Ctau) = ConstantZetaOverS(promote(zeta_over_s,Ctau)...)
+
+# A number is a constant function of the state.
+_callable(c::Real) = Returns(c)
+_callable(f) = f
+
+"""
+    EtaOverS(eta_over_s, Ctau)
+
+`ConstantEtaOverS` with state-dependent inputs: `eta_over_s` and `Ctau` are
+each a number or a callable `(x, th) -> value` of the grand-canonical point
+(`x.T`, `x.μ`) and the thermodynamic state, in the unit convention of the
+fluid, so that `η = (η/s)(x,th)·s` and `τπ = η/[Ctau(x,th)·(ε+p)]`. For
+example `EtaOverS((x,th) -> 0.08 + 1.1*(x.T-0.155), 5.0)`.
+"""
+struct EtaOverS{E,C} <: AbstractShearTransport
+    eta_over_s::E
+    Ctau::C
+    function EtaOverS(eta_over_s, Ctau)
+        e, c = _callable(eta_over_s), _callable(Ctau)
+        new{typeof(e),typeof(c)}(e,c)
+    end
+end
+
+"""
+    ZetaOverS(zeta_over_s, Ctau)
+
+`ConstantZetaOverS` with state-dependent inputs: `zeta_over_s` and `Ctau`
+are each a number or a callable `(x, th) -> value` of the grand-canonical
+point and the thermodynamic state, in the unit convention of the fluid, so
+that `ζ = (ζ/s)(x,th)·s` and `τΠ = ζ/[Ctau(x,th)·(ε+p)]`.
+"""
+struct ZetaOverS{Z,C} <: AbstractBulkTransport
+    zeta_over_s::Z
+    Ctau::C
+    function ZetaOverS(zeta_over_s, Ctau)
+        z, c = _callable(zeta_over_s), _callable(Ctau)
+        new{typeof(z),typeof(c)}(z,c)
+    end
+end
+
+"""
+    FunctionalShearTransport(f)
+    FunctionalBulkTransport(f)
+
+State-dependent shear or bulk sector evaluated as `f(x, th)`, which must
+return a `ShearState(η, τπ)` or `BulkState(ζ, τΠ)` in the unit convention of
+the fluid. Use these when the viscosity or the relaxation time is not of the
+`(η/s)·s`, `η/[Ctau·(ε+p)]` form of `EtaOverS`, for example a relaxation
+time that depends on the speed of sound or has a floor. Like
+`FunctionalSecondOrderTransport`, the callback sees the point and the full
+thermodynamic state.
+"""
+struct FunctionalShearTransport{F} <: AbstractShearTransport
+    f::F
+end
+
+struct FunctionalBulkTransport{F} <: AbstractBulkTransport
+    f::F
+end
+
 """
     ConstantChargeTransport(kappa, tau)
 
@@ -92,6 +154,25 @@ struct ConstantDsT{T} <: AbstractChargeTransport
 end
 
 ConstantDsT(DsT, Ctau) = ConstantDsT(promote(DsT,Ctau)...)
+
+"""
+    EinsteinDiffusion(DsT, Ctau)
+
+`ConstantDsT` with state-dependent inputs: `DsT` and `Ctau` are each a number
+or a callable `(x, th) -> value` of the grand-canonical point and the
+thermodynamic state, in the unit convention of the fluid, so that
+`κ = (DₛT)(x,th)·n/T` and `τ_ν = κ/[Ctau(x,th)·T·∂n/∂μ]`. Fluidum's
+`LinearDiffusion` is a `DsT` linear in `x.T`, and its free heavy-quark
+relaxation time is a `Ctau` built from the kinetic-theory Bessel formula.
+"""
+struct EinsteinDiffusion{D,C} <: AbstractChargeTransport
+    DsT::D
+    Ctau::C
+    function EinsteinDiffusion(DsT, Ctau)
+        d, c = _callable(DsT), _callable(Ctau)
+        new{typeof(d),typeof(c)}(d,c)
+    end
+end
 
 """
     TransportModel(shear, bulk, charge; second_order=NoSecondOrderTransport())
@@ -173,6 +254,24 @@ end
     BulkState(zeta,tau)
 end
 
+@inline shear_state(model::EtaOverS, x, th) =
+    shear_state(ConstantEtaOverS(model.eta_over_s(x,th),model.Ctau(x,th)),x,th)
+
+@inline bulk_state(model::ZetaOverS, x, th) =
+    bulk_state(ConstantZetaOverS(model.zeta_over_s(x,th),model.Ctau(x,th)),x,th)
+
+@inline function shear_state(model::FunctionalShearTransport, x, th)
+    state = model.f(x,th)
+    state isa ShearState || throw(ArgumentError("FunctionalShearTransport callback must return a ShearState"))
+    state
+end
+
+@inline function bulk_state(model::FunctionalBulkTransport, x, th)
+    state = model.f(x,th)
+    state isa BulkState || throw(ArgumentError("FunctionalBulkTransport callback must return a BulkState"))
+    state
+end
+
 @inline function charge_state(::ZeroChargeTransport, x::GrandCanonicalPoint{T,N}, th) where {T,N}
     z = zero(th.pressure)
     Z = zeros(SMatrix{N,N,typeof(z)})
@@ -212,6 +311,13 @@ end
     kappas = SVector{N}(ntuple(i -> _kappa_from_DsT(model.DsT,n[i],x.T,units), N))
     _diagonal_charge_state(kappas,model.Ctau,x,th)
 end
+
+@inline charge_state(model::EinsteinDiffusion, x::GrandCanonicalPoint, th) =
+    charge_state(ConstantDsT(model.DsT(x,th),model.Ctau(x,th)),x,th)
+
+# No charge sector: skip the callbacks, which may index the chemical potentials.
+@inline charge_state(::EinsteinDiffusion, x::GrandCanonicalPoint{T,0}, th) where {T} =
+    charge_state(ZeroChargeTransport(),x,th)
 
 @inline function transport(model::TransportModel, x::GrandCanonicalPoint, th::ThermodynamicState)
     leading = TransportState(
