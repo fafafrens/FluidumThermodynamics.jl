@@ -313,6 +313,10 @@ end
 @inline charge_state(model::EinsteinDiffusion, x::GrandCanonicalPoint, th) =
     charge_state(ConstantDsT(model.DsT(x,th),model.Ctau(x,th)),x,th)
 
+# No charge sector: skip the callbacks, which may index the chemical potentials.
+@inline charge_state(::EinsteinDiffusion, x::GrandCanonicalPoint{T,0}, th) where {T} =
+    charge_state(ZeroChargeTransport(),x,th)
+
 @inline function transport(model::TransportModel, x::GrandCanonicalPoint, th::ThermodynamicState)
     leading = TransportState(
         shear_state(model.shear,x,th),

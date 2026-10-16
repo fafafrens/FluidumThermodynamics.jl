@@ -59,13 +59,16 @@ if abspath(PROGRAM_FILE) == @__FILE__
     model = TransportModel(ZeroShearTransport(),ZeroBulkTransport(),
                            EinsteinDiffusion(DsT,CharmHadronCtau(hadrons)))
     fluid = FluidModel(eos,model)
-    quark = TransportModel(ZeroShearTransport(),ZeroBulkTransport(),
-                           EinsteinDiffusion(DsT,CharmHadronCtau([HadronSpecies(1.5,6,(1,))])))
+    # The free quark for comparison, evaluated on its own single-species gas.
+    quark_species = [HadronSpecies(1.5,6,(1,))]
+    quark = FluidModel(HadronResonanceGas(quark_species),
+                       TransportModel(ZeroShearTransport(),ZeroBulkTransport(),
+                                      EinsteinDiffusion(DsT,CharmHadronCtau(quark_species))))
     println("T [GeV]   n_c [GeV³]     κ [GeV²]     τ_hadrons [GeV⁻¹]   τ_free quark [GeV⁻¹]")
     for T in (0.12,0.14,0.16,0.18)
         x = GrandCanonicalPoint(T,0.0)
         th, tr = transport(fluid,x)
-        trq = transport(quark,x,th)
+        _, trq = transport(quark,x)
         println(rpad(T,9)," ",rpad(round(charge_density(th,1),sigdigits=4),14),
                 rpad(round(tr.charge.kappa[1,1],sigdigits=4),13),
                 rpad(round(tr.charge.tau[1,1],sigdigits=4),20),

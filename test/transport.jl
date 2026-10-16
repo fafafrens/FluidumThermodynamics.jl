@@ -230,4 +230,7 @@ include(joinpath(@__DIR__,"..","examples","hadronic_charm_diffusion.jl"))
     @test tr.charge.kappa[1,1] ≈ DsT/y.T*charge_density(th,1)
     @test tr.charge.tau[1,1] ≈ DsT*sum(qs.^2 .* ns .* [τ̂(s.mass,y.T) for s in hadrons])/sum(qs.^2 .* ns)
     @inferred transport(FluidModel(eos,zero_sectors(EinsteinDiffusion(DsT,CharmHadronCtau(hadrons)))),y)
+    # At a zero-charge point the μ-dependent callback is never called.
+    none = transport(FluidModel(eos,zero_sectors(EinsteinDiffusion(DsT,CharmHadronCtau(hadrons)))),GrandCanonicalPoint(0.2))
+    @test size(none[2].charge.kappa) == (0,0)
 end
