@@ -3,7 +3,7 @@ module FluidumThermodynamics
 using ForwardDiff
 using LinearAlgebra
 using StaticArrays
-using SpecialFunctions: besselkx
+import Bessels
 
 export AbstractEquationOfState,
        AbstractUnitSystem,
@@ -47,6 +47,7 @@ export AbstractEquationOfState,
        ConstantEtaOverS,
        ConstantZetaOverS,
        ConstantChargeTransport,
+       CharmTransport,
        ConstantKappaOverT2,
        ConstantDsT,
        ZeroShearTransport,
@@ -65,6 +66,7 @@ export AbstractEquationOfState,
        FluidumEOS,
        HadronSpecies,
        HadronResonanceGas,
+       HeavyQuark,
        TabulatedEOS,
        InversionError
 
@@ -72,12 +74,14 @@ export AbstractEquationOfState,
 include("units.jl")
 include("points.jl")
 include("equation_of_state.jl")
+include("bessel.jl")
 include("thermodynamics.jl")
 include("inversion.jl")
 include("second_order.jl")
 include("transport.jl")
 include("models.jl")
 include("hadron_resonance_gas.jl")
+include("heavy_quark.jl")
 include("tabulated.jl")
 
 end # module

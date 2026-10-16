@@ -25,12 +25,14 @@ this boundary; the implementation does not cover degenerate fermions above it
 or Bose condensation.
 
 The analytic gradient and Hessian use [modified-Bessel recurrences](https://dlmf.nist.gov/10.29).
-Scaled Bessel functions from [SpecialFunctions.jl](https://specialfunctions.juliamath.org/stable/functions_list/#Bessel-Functions)
+Scaled Bessel functions from [Bessels.jl](https://github.com/JuliaMath/Bessels.jl)
 combine the fugacity and mass exponential before evaluation. This avoids
 multiplying a vanishing Bessel value by an overflowing fugacity at low temperature.
 The full state is computed in one species loop, reusing the Bessel evaluations.
-The implementation specializes `thermodynamic`; callers do not need to
-differentiate Bessel functions with ForwardDiff.
+The implementation specializes `thermodynamic`, so callers do not need to
+differentiate Bessel functions; the package's `besselkx` wrapper nevertheless
+accepts ForwardDiff dual numbers (including nested ones), so `pressure` of an
+HRG can be differentiated with ForwardDiff as well.
 
 ## Charges and units
 
