@@ -326,15 +326,16 @@ th,tr = transport(FluidModel(eos,model),x)
 `FluidModel` is an EOS/transport container; it does not evolve a fluid.
 The constant shear and bulk models use
 `η = (η/s)*s`, `ζ = (ζ/s)*s`, and
-`τ = viscosity/[Ctau*(ε+p)]`, with `τ` in the length unit of the convention
-like `τ_ν`. The caller supplies physically appropriate coefficients and
-states with nonzero enthalpy.
+`τ = hbarc(units)*viscosity/[Ctau*(ε+p)]`: the natural-unit value
+`viscosity/[Ctau*(ε+p)]` expressed in the length unit of the convention,
+like `τ_ν` (the factor is 1 in `NaturalGeV`). The caller supplies physically
+appropriate coefficients and states with nonzero enthalpy.
 
 For the charge sector, `κ` multiplies `∇(μ/T)` and has dimension energy²,
 so only a dimensionless ratio can sensibly be held fixed. Two models do that,
 both with the relaxation time `τ_ν = κ/[Ctau·T·∂n/∂μ]`, so that the diffusion
 front `κ/(τ_ν ∂n/∂(μ/T)) = Ctau` is the same number at every state (causal
-for `Ctau < 1`, like the shear front `η/(τ_π w) = Ctau`):
+for `Ctau < 1`, like the shear front `hbarc·η/(τ_π w) = Ctau`):
 
 - `ConstantKappaOverT2(κ/T², Ctau)`: `κ = (κ/T²)·T²`, the conformal scaling.
 - `ConstantDsT(DₛT, Ctau)`: `κ = Dₛ·n = (DₛT)·n/T`, the Einstein form of

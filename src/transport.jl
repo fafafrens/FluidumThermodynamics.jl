@@ -7,13 +7,13 @@ struct ZeroShearTransport <: AbstractShearTransport end
 struct ZeroBulkTransport <: AbstractBulkTransport end
 struct ZeroChargeTransport <: AbstractChargeTransport end
 
-"""Simple η/s model with τπ = η/[Cτ(ε+p)]."""
+"""Simple η/s model with τπ = ℏc·η/[Cτ(ε+p)], in the length unit of the convention (`hbarc`)."""
 struct ConstantEtaOverS{T} <: AbstractShearTransport
     eta_over_s::T
     Ctau::T
 end
 
-"""Simple ζ/s model with τΠ = ζ/[Cτ(ε+p)]."""
+"""Simple ζ/s model with τΠ = ℏc·ζ/[Cτ(ε+p)], in the length unit of the convention (`hbarc`)."""
 struct ConstantZetaOverS{T} <: AbstractBulkTransport
     zeta_over_s::T
     Ctau::T
