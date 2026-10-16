@@ -111,43 +111,57 @@ end
 end
 
 @testset "Charm diffusion" begin
-    eos = PolynomialMultiChargeEOS(3.0,@SMatrix [2.0 0.3; 0.3 1.5])
-    x = GrandCanonicalPoint(0.2,0.03,-0.01)
-    th = thermodynamic(eos,x)
     DsT, m = 0.2, 1.5
-    model = CharmTransport(HeavyQuark(mass=m),DsT)
+    hq = HeavyQuark(mass=m)
+    x = GrandCanonicalPoint(0.2,0.03)
+    th = thermodynamic(hq,x)
+    model = CharmTransport(hq,DsT)
+    @test model.mass == m && model.DsT(0.3) == DsT
     tr = transport(TransportModel(ZeroShearTransport(),ZeroBulkTransport(),model),x,th)
     K, R = tr.charge.kappa, tr.charge.tau
-    @test K isa SMatrix{2,2,Float64} && R isa SMatrix{2,2,Float64}
-    nc(x,c) = charge_density(thermodynamic(HeavyQuark(mass=m),GrandCanonicalPoint(x.T,x.μ[c])),1)
-    @test K[1,1] ≈ DsT/x.T*nc(x,1)
+    @test K isa SMatrix{1,1,Float64} && R isa SMatrix{1,1,Float64}
+    # Fluidum's free-charm prescription, with n the charm density of the fluid state.
+    @test K[1,1] ≈ DsT/x.T*charge_density(th,1)
     z = m/x.T
     bk = ν -> FluidumThermodynamics.besselkx(ν,z)
     @test R[1,1] ≈ DsT*z^3/(48*x.T)*(2*bk(1)-3*bk(3)+bk(5))/bk(2)
-    @test K[1,2] == K[2,1] == K[2,2] == 0
-    @test R[1,2] == R[2,1] == R[2,2] == 0
+    # ConstantDsT with the Bessel-function Ctau.
+    Ctau = 48*bk(2)/(z^3*(2*bk(1)-3*bk(3)+bk(5)))
+    ref = transport(TransportModel(ZeroShearTransport(),ZeroBulkTransport(),ConstantDsT(DsT,Ctau)),x,th)
+    @test K == ref.charge.kappa && R == ref.charge.tau
     # τ is independent of μ, while κ follows the Boltzmann charm density.
-    x2 = GrandCanonicalPoint(0.2,0.06,-0.01)
-    th2 = thermodynamic(eos,x2)
-    tr2 = transport(TransportModel(ZeroShearTransport(),ZeroBulkTransport(),model),x2,th2)
+    x2 = GrandCanonicalPoint(0.2,0.06)
+    tr2 = transport(TransportModel(ZeroShearTransport(),ZeroBulkTransport(),model),x2,thermodynamic(hq,x2))
     @test tr2.charge.tau[1,1] ≈ R[1,1]
     @test tr2.charge.kappa[1,1]/K[1,1] ≈ exp((x2.μ[1]-x.μ[1])/x.T)
-    # Temperature-dependent D_s T on the second charge.
+    # Temperature-dependent D_s T through the full fluid model.
     linear = T -> ifelse(T > 0.18, 1.2*T + 0.05, 1.2*0.18 + 0.05)
-    fluid = FluidModel(eos,TransportModel(ConstantEtaOverS(0.16,5.0),ConstantZetaOverS(0.03,10.0),
-                                          CharmTransport(HeavyQuark(mass=m),linear,2)))
-    th, tr = @inferred transport(fluid,x)
-    @test tr.charge.kappa[2,2] ≈ linear(x.T)/x.T*nc(x,2)
-    @test tr.charge.kappa[1,1] == tr.charge.tau[1,1] == 0
-    @test eltype(tr.charge.kappa) == eltype(tr.charge.tau)
+    fluid = FluidModel(hq,TransportModel(ConstantEtaOverS(0.16,5.0),ConstantZetaOverS(0.03,10.0),CharmTransport(m,linear)))
+    thf, trf = @inferred transport(fluid,x)
+    @test thf.pressure ≈ pressure(hq,x)
+    @test trf.charge.kappa[1,1] ≈ linear(x.T)/x.T*charge_density(thf,1)
+    @test trf.charge.tau[1,1] ≈ R[1,1]*linear(x.T)/DsT
+    @test eltype(trf.charge.kappa) == eltype(trf.charge.tau)
     @test charm_allocations(fluid,x) == 0
     # Heavy-quark limit τ → D_s m/T.
-    heavy = transport(TransportModel(ZeroShearTransport(),ZeroBulkTransport(),CharmTransport(HeavyQuark(mass=100.0),DsT)),x,th)
-    @test heavy.charge.tau[1,1] ≈ DsT*100.0/x.T^2 rtol=0.01
-    @test_throws ArgumentError CharmTransport(HeavyQuark(),DsT,0)
-    two = HadronResonanceGas([HadronSpecies(m,6,(1,)),HadronSpecies(m,6,(-1,))])
-    @test_throws ArgumentError CharmTransport(two,DsT)
-    bad = FluidModel(eos,TransportModel(ZeroShearTransport(),ZeroBulkTransport(),CharmTransport(HeavyQuark(mass=m),DsT,3)))
-    @test_throws DimensionMismatch transport(bad,x)
-    @test_throws DimensionMismatch transport(FluidModel(IdealQCD(),TransportModel(ZeroShearTransport(),ZeroBulkTransport(),model)),GrandCanonicalPoint(0.2))
+    heavy = HeavyQuark(mass=100.0)
+    trh = transport(TransportModel(ZeroShearTransport(),ZeroBulkTransport(),CharmTransport(heavy,DsT)),x,thermodynamic(heavy,x))
+    @test trh.charge.tau[1,1] ≈ DsT*100.0/x.T^2 rtol=0.01
+    # κ and τ follow the state's unit convention, like ConstantDsT.
+    gevfm = HeavyQuark(mass=m,units=FluidumThermodynamics.GeVFm())
+    trg = transport(TransportModel(ZeroShearTransport(),ZeroBulkTransport(),CharmTransport(gevfm,DsT)),x,thermodynamic(gevfm,x))
+    hbarc = FluidumThermodynamics._hbarc_GeV_fm
+    @test trg.charge.kappa[1,1] ≈ K[1,1]/hbarc^2
+    @test trg.charge.tau[1,1] ≈ R[1,1]*hbarc
+    # Like ConstantDsT, the prescription applies to every charge of a multi-charge fluid.
+    eos = PolynomialMultiChargeEOS(3.0,@SMatrix [2.0 0.3; 0.3 1.5])
+    xm = GrandCanonicalPoint(0.2,0.03,-0.01)
+    thm = thermodynamic(eos,xm)
+    trm = transport(TransportModel(ZeroShearTransport(),ZeroBulkTransport(),CharmTransport(m,DsT)),xm,thm)
+    refm = transport(TransportModel(ZeroShearTransport(),ZeroBulkTransport(),ConstantDsT(DsT,Ctau)),xm,thm)
+    @test trm.charge.kappa == refm.charge.kappa && trm.charge.tau == refm.charge.tau
+    none = transport(FluidModel(FluidumEOS(),TransportModel(ZeroShearTransport(),ZeroBulkTransport(),model)),GrandCanonicalPoint(0.2))
+    @test size(none[2].charge.kappa) == (0,0)
+    @test_throws ArgumentError CharmTransport(-1.0,DsT)
+    @test_throws MethodError CharmTransport(eos,DsT)
 end

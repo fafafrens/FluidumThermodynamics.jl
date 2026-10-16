@@ -77,16 +77,96 @@ end
 
     @testset "HeavyQuark" begin
         hq = HeavyQuark()
-        @test hq isa HadronResonanceGas
-        species = only(hq.particles)
+        @test hq isa HeavyQuark
+        @test hq.bulk isa FluidumEOS
+        species = only(hq.charm.particles)
         @test species.mass == 1.5
         @test species.degeneracy == 6
         @test species.charges == SVector(1.0)
         @test species.statistics == 0
         T,μ = 0.3,0.1
+        x = GrandCanonicalPoint(T,μ)
+        th = thermodynamic(hq,x)
+        bulk = thermodynamic(FluidumEOS(),GrandCanonicalPoint(T))
+        charm = thermodynamic(hq.charm,x)
+        # Default: one potential p = p_bulk(T) + p_charm(T,μ).
+        @test FluidumThermodynamics.backreaction(hq)
+        @test th.pressure ≈ bulk.pressure + charm.pressure
+        @test pressure(hq,x) ≈ th.pressure
+        @test entropy_density(th) ≈ entropy_density(bulk) + entropy_density(charm)
+        @test th.hessian[1,1] ≈ bulk.hessian[1,1] + charm.hessian[1,1]
+        @test charge_density(th,1) == charge_density(charm,1)
+        @test th.hessian[2,2] == charm.hessian[2,2]
+        @test th.hessian[1,2] == th.hessian[2,1] == charm.hessian[1,2]
+        # The state is the gradient and Hessian of `pressure` (central differences).
+        h = 1e-5
+        dp(dT,dμ) = (pressure(hq,GrandCanonicalPoint(T+dT,μ+dμ)) - pressure(hq,GrandCanonicalPoint(T-dT,μ-dμ)))/2
+        @test dp(h,0.0)/h ≈ entropy_density(th) rtol=1e-6
+        @test dp(0.0,h)/h ≈ charge_density(th,1) rtol=1e-6
+        dn(dT) = (charge_density(thermodynamic(hq,GrandCanonicalPoint(T+dT,μ)),1) -
+                  charge_density(thermodynamic(hq,GrandCanonicalPoint(T-dT,μ)),1))/(2*dT)
+        ds(dμ) = (entropy_density(thermodynamic(hq,GrandCanonicalPoint(T,μ+dμ))) -
+                  entropy_density(thermodynamic(hq,GrandCanonicalPoint(T,μ-dμ))))/(2*dμ)
+        @test dn(h) ≈ th.hessian[1,2] rtol=1e-6
+        @test ds(h) ≈ th.hessian[1,2] rtol=1e-6   # Maxwell relation ∂s/∂μ = ∂n/∂T
         z = 1.5/T
         expected = 6*1.5^2*T^2/(2*pi^2)*FluidumThermodynamics.besselkx(2,z)*exp(-z)*exp(μ/T)
-        @test pressure(hq,GrandCanonicalPoint(T,SVector(μ))) ≈ expected
-        @test HeavyQuark(mass=1.3).particles[1].mass == 1.3
+        @test pressure(hq.charm,x) ≈ expected
+        @test charge_density(th,1) ≈ expected/T
+        # Omitted chemical potential means μ = 0, temperature derivatives only.
+        th0 = thermodynamic(hq,GrandCanonicalPoint(T))
+        charm0 = thermodynamic(hq.charm,GrandCanonicalPoint(T,0.0))
+        @test length(th0.gradient) == 1
+        @test th0.pressure ≈ bulk.pressure + charm0.pressure
+        @test entropy_density(th0) ≈ entropy_density(bulk) + entropy_density(charm0)
+        @test pressure(hq,GrandCanonicalPoint(T)) ≈ th0.pressure
+        @test_throws DimensionMismatch thermodynamic(hq,GrandCanonicalPoint(T,μ,0.0))
+        @test_throws DimensionMismatch pressure(hq,GrandCanonicalPoint(T,μ,0.0))
+        # Fluidum convention: the quark gas does not back-react on the bulk.
+        pert = HeavyQuark(backreaction=false)
+        thp = thermodynamic(pert,x)
+        @test !FluidumThermodynamics.backreaction(pert)
+        @test thp.pressure == bulk.pressure == pressure(pert,x)
+        @test entropy_density(thp) == entropy_density(bulk)
+        @test thp.hessian[1,1] == bulk.hessian[1,1]
+        @test charge_density(thp,1) == charge_density(charm,1)
+        @test thp.hessian[2,2] == charm.hessian[2,2]
+        @test thp.hessian[1,2] == thp.hessian[2,1] == charm.hessian[1,2]
+        thp0 = thermodynamic(pert,GrandCanonicalPoint(T))
+        @test thp0.pressure == bulk.pressure && thp0.gradient == bulk.gradient && thp0.hessian == bulk.hessian
+        # Without back-reaction s is μ-independent while ∂n/∂T is not: no Maxwell relation.
+        dsp(dμ) = (entropy_density(thermodynamic(pert,GrandCanonicalPoint(T,μ+dμ))) -
+                   entropy_density(thermodynamic(pert,GrandCanonicalPoint(T,μ-dμ))))/(2*dμ)
+        @test dsp(h) == 0
+        @test thp.hessian[1,2] ≈ dn(h) rtol=1e-6
+        @test HeavyQuark(mass=1.3).charm.particles[1].mass == 1.3
+        @test HeavyQuark(bulk=IdealQCD()).bulk isa IdealQCD
+        gevfm = HeavyQuark(units=FluidumThermodynamics.GeVFm())
+        @test FluidumThermodynamics.unit_system(gevfm) === FluidumThermodynamics.GeVFm()
+        @test FluidumThermodynamics.unit_system(gevfm.bulk) === FluidumThermodynamics.GeVFm()
+        @test FluidumThermodynamics.unit_system(gevfm.charm) === FluidumThermodynamics.GeVFm()
+        two = HadronResonanceGas([HadronSpecies(1.5,6,(1,)),HadronSpecies(1.5,6,(-1,))])
+        @test_throws ArgumentError HeavyQuark(FluidumEOS(),two)
+        @test_throws ArgumentError HeavyQuark(FluidumEOS(units=FluidumThermodynamics.GeVFm()),hq.charm)
     end
+end
+
+@testset "Bessel wrapper derivatives" begin
+    bk = FluidumThermodynamics.besselkx
+    for ν in 0:3, x in (0.5, 7.5, 50.0)
+        h = 1e-5*x
+        first = (bk(ν,x+h) - bk(ν,x-h))/(2h)
+        second = (bk(ν,x+h) - 2*bk(ν,x) + bk(ν,x-h))/h^2
+        @test ForwardDiff.derivative(t -> bk(ν,t),x) ≈ first rtol=1e-7
+        @test ForwardDiff.derivative(t -> ForwardDiff.derivative(s -> bk(ν,s),t),x) ≈ second rtol=1e-4
+    end
+    # Closed form for ν = 0: d/dx [e^x K₀(x)] = e^x (K₀ - K₁).
+    @test ForwardDiff.derivative(t -> bk(0,t),2.0) ≈ bk(0,2.0) - bk(1,2.0)
+    # Differentiating the HRG pressure directly reproduces the analytic state.
+    hq = HeavyQuark()
+    T, μ = 0.25, 0.1
+    th = thermodynamic(hq,GrandCanonicalPoint(T,μ))
+    @test ForwardDiff.derivative(t -> pressure(hq,GrandCanonicalPoint(t,μ)),T) ≈ entropy_density(th) rtol=1e-10
+    @test ForwardDiff.derivative(m -> pressure(hq,GrandCanonicalPoint(T,m)),μ) ≈ charge_density(th,1) rtol=1e-10
+    @test ForwardDiff.derivative(t -> ForwardDiff.derivative(m -> pressure(hq,GrandCanonicalPoint(t,m)),μ),T) ≈ th.hessian[1,2] rtol=1e-10
 end
