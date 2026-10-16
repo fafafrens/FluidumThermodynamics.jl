@@ -352,12 +352,13 @@ of the quark (degeneracy 6, mass `m`). By default the quark pressure is added
 to the bulk, so the state derives from a single potential;
 `backreaction=false` reproduces Fluidum, where the quark gas does not
 back-react on the bulk. `CharmTransport(hq,DsT)` (or `CharmTransport(m,DsT)`) is the free
-(Boltzmann) charm prescription of Fluidum: `ConstantDsT` with the relaxation
+(Boltzmann) charm prescription of Fluidum, `EinsteinDiffusion(DsT,CharmCtau(m))`:
+`ConstantDsT` with the relaxation
 time set by the kinetic-theory Bessel formula instead of a fixed front speed,
 `Ctau = 48K₂/[z³(2K₁ - 3K₃ + K₅)]` with `z = m/T`. For a Boltzmann gas this
 is `τ = (D_s T) * z^3/(48T) * (2K₁ - 3K₃ + K₅)/K₂`, which tends to `D_s m/T`
 for heavy quarks. `DsT` is the dimensionless `D_s T`, either a number or a
-function of `T`; the mass is in the EOS energy unit. As for `ConstantDsT`,
+function `(x,th)` as in `EinsteinDiffusion`; the mass is in the EOS energy unit. As for `ConstantDsT`,
 κ applies to every charge of the fluid, and κ and τ follow the unit
 convention of the state.
 For the charge sector, `κ` multiplies `∇(μ/T)` and has dimension energy²,

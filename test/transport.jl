@@ -116,7 +116,7 @@ end
     x = GrandCanonicalPoint(0.2,0.03)
     th = thermodynamic(hq,x)
     model = CharmTransport(hq,DsT)
-    @test model.mass == m && model.DsT(0.3) == DsT
+    @test model isa EinsteinDiffusion && model.DsT(x,th) == DsT && model.Ctau === CharmCtau(m)
     tr = transport(TransportModel(ZeroShearTransport(),ZeroBulkTransport(),model),x,th)
     K, R = tr.charge.kappa, tr.charge.tau
     @test K isa SMatrix{1,1,Float64} && R isa SMatrix{1,1,Float64}
@@ -135,12 +135,12 @@ end
     @test tr2.charge.tau[1,1] ≈ R[1,1]
     @test tr2.charge.kappa[1,1]/K[1,1] ≈ exp((x2.μ[1]-x.μ[1])/x.T)
     # Temperature-dependent D_s T through the full fluid model.
-    linear = T -> ifelse(T > 0.18, 1.2*T + 0.05, 1.2*0.18 + 0.05)
+    linear = (x,th) -> ifelse(x.T > 0.18, 1.2*x.T + 0.05, 1.2*0.18 + 0.05)
     fluid = FluidModel(hq,TransportModel(ConstantEtaOverS(0.16,5.0),ConstantZetaOverS(0.03,10.0),CharmTransport(m,linear)))
     thf, trf = @inferred transport(fluid,x)
     @test thf.pressure ≈ pressure(hq,x)
-    @test trf.charge.kappa[1,1] ≈ linear(x.T)/x.T*charge_density(thf,1)
-    @test trf.charge.tau[1,1] ≈ R[1,1]*linear(x.T)/DsT
+    @test trf.charge.kappa[1,1] ≈ linear(x,th)/x.T*charge_density(thf,1)
+    @test trf.charge.tau[1,1] ≈ R[1,1]*linear(x,th)/DsT
     @test eltype(trf.charge.kappa) == eltype(trf.charge.tau)
     @test charm_allocations(fluid,x) == 0
     # Heavy-quark limit τ → D_s m/T.
