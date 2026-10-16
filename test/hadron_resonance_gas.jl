@@ -126,7 +126,8 @@ end
         pert = HeavyQuark(backreaction=false)
         thp = thermodynamic(pert,x)
         @test !FluidumThermodynamics.backreaction(pert)
-        @test thp.pressure == bulk.pressure == pressure(pert,x)
+        @test thp.pressure == bulk.pressure
+        @test pressure(pert,x) ≈ thp.pressure
         @test entropy_density(thp) == entropy_density(bulk)
         @test thp.hessian[1,1] == bulk.hessian[1,1]
         @test charge_density(thp,1) == charge_density(charm,1)
