@@ -121,3 +121,32 @@ end
     @test recovered.T ≈ x.T
     @test recovered.μ ≈ x.μ
 end
+
+@testset "hbarc carries transport coefficients into the convention" begin
+    hc = FluidumThermodynamics._hbarc_GeV_fm
+    @test hbarc(NaturalGeV()) == 1
+    @test hbarc(GeVFm()) ≈ hc
+    @test hbarc(MeVFm()) ≈ 1000*hc
+    for units in (NaturalGeV(),GeVFm(),MeVFm())
+        @test unit_scale(units) ≈ hbarc(units)^-3
+    end
+    # The same fluid in each convention: η, ζ convert as densities (length⁻³),
+    # κ as length⁻², and all three relaxation times as lengths.
+    model = TransportModel(ConstantEtaOverS(0.16,5.0),ConstantZetaOverS(0.03,10.0),ConstantDsT(0.2,1.0))
+    thn, trn = transport(FluidModel(IdealQCD(),model),GrandCanonicalPoint(0.2,0.1))
+    for (units, point) in ((GeVFm(),GrandCanonicalPoint(0.2,0.1)),(MeVFm(),GrandCanonicalPoint(200.0,100.0)))
+        th, tr = transport(FluidModel(IdealQCD(units=units),model),point)
+        e = 1/FluidumThermodynamics.energy_scale(units)   # one GeV in the convention's energy unit
+        @test th.pressure ≈ thn.pressure*e/hc^3
+        @test entropy_density(th) ≈ entropy_density(thn)/hc^3
+        @test tr.shear.eta ≈ trn.shear.eta/hc^3
+        @test tr.bulk.zeta ≈ trn.bulk.zeta/hc^3
+        @test tr.charge.kappa[1,1] ≈ trn.charge.kappa[1,1]/hc^2
+        @test tr.shear.tau ≈ trn.shear.tau*hc
+        @test tr.bulk.tau ≈ trn.bulk.tau*hc
+        @test tr.charge.tau[1,1] ≈ trn.charge.tau[1,1]*hc
+    end
+    # Mixed number types promote in the states.
+    @test ShearState(1.0,2) === ShearState(1.0,2.0)
+    @test BulkState(1,2.0) === BulkState(1.0,2.0)
+end

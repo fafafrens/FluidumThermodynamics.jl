@@ -184,6 +184,14 @@ th.pressure  # MeV/fm³
 | Pressure, energy density | GeV⁴ | GeV/fm³ | MeV/fm³ |
 | Entropy and charge densities | GeV³ | fm⁻³ | fm⁻³ |
 | Pressure Hessian | GeV² | GeV⁻¹ fm⁻³ | MeV⁻¹ fm⁻³ |
+| Viscosities η, ζ | GeV³ | fm⁻³ | fm⁻³ |
+| Conductivity κ | GeV² | fm⁻² | fm⁻² |
+| Relaxation times τπ, τΠ, τ_ν | GeV⁻¹ | fm | fm |
+
+`hbarc(units)` is ℏc in the convention's units (1, 0.1973 GeV fm,
+197.3 MeV fm); a quantity computed with ℏ = c = 1 that carries lengthᵇ is
+multiplied by `hbarc(units)^b`, which is how the transport coefficients and
+`unit_scale = hbarc^-3` are obtained.
 
 To change conventions explicitly:
 
@@ -318,8 +326,10 @@ th,tr = transport(FluidModel(eos,model),x)
 `FluidModel` is an EOS/transport container; it does not evolve a fluid.
 The constant shear and bulk models use
 `η = (η/s)*s`, `ζ = (ζ/s)*s`, and
-`τ = viscosity/[Ctau*(ε+p)]`. The caller supplies physically appropriate
-coefficients and states with nonzero enthalpy.
+`τ = hbarc(units)*viscosity/[Ctau*(ε+p)]`: the natural-unit value
+`viscosity/[Ctau*(ε+p)]` expressed in the length unit of the convention,
+like `τ_ν` (the factor is 1 in `NaturalGeV`). The caller supplies physically
+appropriate coefficients and states with nonzero enthalpy.
 `EtaOverS(η/s,Ctau)` and `ZetaOverS(ζ/s,Ctau)` are the same models with
 state-dependent inputs: each argument is a number or a function `(x,th)` of
 the grand-canonical point (`x.T`, `x.μ`) and the thermodynamic state, in the
@@ -354,7 +364,7 @@ For the charge sector, `κ` multiplies `∇(μ/T)` and has dimension energy²,
 so only a dimensionless ratio can sensibly be held fixed. Two models do that,
 both with the relaxation time `τ_ν = κ/[Ctau·T·∂n/∂μ]`, so that the diffusion
 front `κ/(τ_ν ∂n/∂(μ/T)) = Ctau` is the same number at every state (causal
-for `Ctau < 1`, like the shear front `η/(τ_π w) = Ctau`):
+for `Ctau < 1`, like the shear front `hbarc·η/(τ_π w) = Ctau`):
 
 - `ConstantKappaOverT2(κ/T², Ctau)`: `κ = (κ/T²)·T²`, the conformal scaling.
 - `ConstantDsT(DₛT, Ctau)`: `κ = Dₛ·n = (DₛT)·n/T`, the Einstein form of

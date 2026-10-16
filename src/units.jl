@@ -7,7 +7,8 @@ in energy units (`k_B = 1`), conserved charges are dimensionless, and pressure
 has units of energy per volume.
 
 Custom conventions implement `energy_scale(units)` (one energy unit in GeV)
-and `length_scale(units)` (one length unit in fm), returning positive scales.
+and `length_scale(units)` (one length unit in fm), returning positive scales;
+`hbarc(units)` and `unit_scale(units)` follow from them.
 """
 abstract type AbstractUnitSystem end
 
@@ -34,18 +35,29 @@ length_scale(::MeVFm) = 1//1
 
 # Preserve the original Fluidum value of ℏc (GeV fm).
 const _hbarc_GeV_fm = 0.1973261
-const _fmGeV3 = (1/_hbarc_GeV_fm)^3
+
+"""
+    hbarc(units::AbstractUnitSystem)
+
+ℏc in the convention's units, energy unit × length unit: 1 for `NaturalGeV`,
+0.1973 GeV fm for `GeVFm`, 197.3 MeV fm for `MeVFm`. A quantity computed with
+ℏ = c = 1 in the energy unit that carries lengthᵇ is multiplied by
+`hbarc(units)^b` to land in the convention: pressure (length⁻³) by
+`hbarc^-3`, a conductivity (length⁻²) by `hbarc^-2`, a relaxation time
+(length) by `hbarc`.
+"""
+@inline hbarc(units::AbstractUnitSystem) = _hbarc_GeV_fm/(energy_scale(units)*length_scale(units))
+@inline hbarc(::NaturalGeV) = 1.0
 
 """
     unit_scale(units::AbstractUnitSystem)
     unit_scale(eos::AbstractEquationOfState)
 
-Conversion factor from pressure in energy⁴ to energy/length³. EOS constructors
-store this factor in their required `unit_scale` field; `unit_scale(eos)`
-reads the stored value.
+Conversion factor from pressure in energy⁴ to energy/length³, `hbarc(units)^-3`.
+EOS constructors store this factor in their required `unit_scale` field;
+`unit_scale(eos)` reads the stored value.
 """
-@inline unit_scale(units::AbstractUnitSystem) =
-    (energy_scale(units)*length_scale(units))^3 * _fmGeV3
+@inline unit_scale(units::AbstractUnitSystem) = hbarc(units)^-3
 @inline unit_scale(::NaturalGeV) = 1.0
 
 """

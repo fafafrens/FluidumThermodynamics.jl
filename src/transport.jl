@@ -7,13 +7,13 @@ struct ZeroShearTransport <: AbstractShearTransport end
 struct ZeroBulkTransport <: AbstractBulkTransport end
 struct ZeroChargeTransport <: AbstractChargeTransport end
 
-"""Simple η/s model with τπ = η/[Cτ(ε+p)]."""
+"""Simple η/s model with τπ = ℏc·η/[Cτ(ε+p)], in the length unit of the convention (`hbarc`)."""
 struct ConstantEtaOverS{T} <: AbstractShearTransport
     eta_over_s::T
     Ctau::T
 end
 
-"""Simple ζ/s model with τΠ = ζ/[Cτ(ε+p)]."""
+"""Simple ζ/s model with τΠ = ℏc·ζ/[Cτ(ε+p)], in the length unit of the convention (`hbarc`)."""
 struct ConstantZetaOverS{T} <: AbstractBulkTransport
     zeta_over_s::T
     Ctau::T
@@ -207,6 +207,9 @@ struct BulkState{T}
     tau::T
 end
 
+ShearState(eta, tau) = ShearState(promote(eta,tau)...)
+BulkState(zeta, tau) = BulkState(promote(zeta,tau)...)
+
 struct ChargeState{K,R}
     kappa::K
     tau::R
@@ -235,7 +238,8 @@ end
 
 @inline function shear_state(model::ConstantEtaOverS, x, th)
     eta = model.eta_over_s*entropy_density(th)
-    tau = eta/(model.Ctau*enthalpy(x,th))
+    # η/(Ctau·w) is an inverse energy; hbarc makes it a length of the convention.
+    tau = eta/(model.Ctau*enthalpy(x,th))*hbarc(unit_system(th))
     ShearState(eta,tau)
 end
 
@@ -246,7 +250,7 @@ end
 
 @inline function bulk_state(model::ConstantZetaOverS, x, th)
     zeta = model.zeta_over_s*entropy_density(th)
-    tau = zeta/(model.Ctau*enthalpy(x,th))
+    tau = zeta/(model.Ctau*enthalpy(x,th))*hbarc(unit_system(th))
     BulkState(zeta,tau)
 end
 
@@ -280,17 +284,12 @@ end
     ChargeState(model.kappa,model.tau)
 end
 
-# One length unit of the convention in GeV⁻¹. A quantity of dimension energy^a·length^b
-# computed in GeV is divided by energy_scale^a·(length unit)^b to land in the convention.
-@inline _length_unit_GeVinv(units::AbstractUnitSystem) = length_scale(units)/_hbarc_GeV_fm
+# Quantities computed with ℏ = c = 1 carry lengthᵇ through hbarc(units)^b (see `hbarc`).
+# κ = k̂·T²: energy² to length⁻².
+@inline _kappa_from_T2(k̂, T, units::AbstractUnitSystem) = k̂*T^2/hbarc(units)^2
 
-# κ = k̂·T² in the convention of `units`: T² (energy²) converted to length⁻².
-@inline _kappa_from_T2(k̂, T, units::AbstractUnitSystem) =
-    k̂*T^2*(energy_scale(units)*_length_unit_GeVinv(units))^2
-
-# κ = DₛT·n/T in the convention of `units`: n/T (length⁻³·energy⁻¹) converted to length⁻².
-@inline _kappa_from_DsT(DsT, n, T, units::AbstractUnitSystem) =
-    DsT*n/(T*energy_scale(units)*_length_unit_GeVinv(units))
+# κ = DₛT·n/T: length⁻³·energy⁻¹ to length⁻².
+@inline _kappa_from_DsT(DsT, n, T, units::AbstractUnitSystem) = DsT*n/T*hbarc(units)
 
 # Relaxation-time matrix τ_ν = κ·(Ctau·T·χ)⁻¹ from a diagonal conductivity, so that the front
 # speed κ/(τ_ν·T·χ) is Ctau in every charge direction. T·χ is ∂n/∂(μ/T) at fixed T.
