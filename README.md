@@ -126,7 +126,10 @@ th = thermodynamic(eos, GrandCanonicalPoint(0.155, 0.02))
 The default species statistics are `:boltzmann` (one term). For quantum species,
 `terms` controls the fugacity expansion; increase it to check convergence.
 See the [HRG guide](docs/hrg.md) for the formula, multi-charge usage, and limits.
-No complete particle catalog is bundled.
+No complete particle catalog is bundled. `read_particle_list(file; charges, condition,
+minmass, maxmass, statistics, antiparticles=true)` reads species from a FastReso
+`particles.data` file (by default with charge `Nc + Nac`, the heavy-quark count,
+and doubled degeneracy for the antiparticles the format omits); see the HRG guide.
 
 EOS models support addition, subtraction, negation, scalar multiplication,
 and scalar division. Composition combines evaluated pressure, gradient,
@@ -348,7 +351,11 @@ does not allocate.
 `HeavyQuark(; mass=1.5, bulk=FluidumEOS())` is the analogue of Fluidum's
 `Heavy_Quark`: a bulk EOS, evaluated at zero chemical potential, carrying one
 heavy-quark charge whose density and susceptibility come from a Boltzmann gas
-of the quark (degeneracy 6, mass `m`). By default the quark pressure is added
+of the quark (degeneracy 6, mass `m`). `HeavyQuark(; particles=list)` (or
+`HeavyQuark(bulk, HadronResonanceGas(list))`) replaces the quark by a gas of
+heavy-flavour hadrons, each with its heavy-quark count as the charge;
+`read_particle_list(file)` reads such a list from a FastReso `particles.data`
+file with charge `Nc + Nac` (see `docs/hrg.md`). By default the quark pressure is added
 to the bulk, so the state derives from a single potential;
 `backreaction=false` reproduces Fluidum, where the quark gas does not
 back-react on the bulk. `CharmTransport(hq,DsT)` (or `CharmTransport(m,DsT)`) is the free
@@ -392,6 +399,27 @@ function (c::CharmHadronCtau)(x, th)
     density/(x.T*weighted)        # Ctau = κ/(τ·T·∂n/∂μ) with T·∂n/∂μ = Σq²n
 end
 model = EinsteinDiffusion(0.2,CharmHadronCtau(charm_hadrons))
+```
+
+Fluidum's own hadronic prescription (`diffusion_hadron`, `τ_diffusion_hadron`)
+is built in as `HadronicCharmDiffusion(DsT, species)` (or `(DsT, hq)` for a
+`HeavyQuark` of hadrons). It normalizes κ by `Σqᵢ²nᵢ` instead of the density
+`n = Σqᵢnᵢ`:
+
+    κ = DₛT · Σqᵢ²nᵢ / T,        τ = Σqᵢ²nᵢτᵢ / Σqᵢ²nᵢ,
+
+with the same single-species `τᵢ`. For a Boltzmann gas `Σqᵢ²nᵢ = T·∂n/∂μ`; the
+two prescriptions agree when every `qᵢ = 1` (and a single quark species is
+`CharmTransport`), and differ once J/ψ (`q = 2`) is in the list. κ and τ come
+from the species list, not from the fluid state, so the list may differ from
+the gas that sets the charm density, as in Fluidum.
+
+```julia
+hadrons = read_particle_list("particles_charm.data")
+hq = HeavyQuark(; particles=hadrons)
+model = TransportModel(ConstantEtaOverS(0.16,5.0),ConstantZetaOverS(0.03,10.0),
+                       HadronicCharmDiffusion(0.2,hq))
+th, tr = transport(FluidModel(hq,model),GrandCanonicalPoint(0.155,0.0))
 ```
 
 Both return diagonal `κ` and the matrix `τ_ν = κ·(Ctau·T·χ)⁻¹` for several

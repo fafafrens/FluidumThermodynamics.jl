@@ -146,8 +146,23 @@ end
         @test FluidumThermodynamics.unit_system(gevfm) === FluidumThermodynamics.GeVFm()
         @test FluidumThermodynamics.unit_system(gevfm.bulk) === FluidumThermodynamics.GeVFm()
         @test FluidumThermodynamics.unit_system(gevfm.charm) === FluidumThermodynamics.GeVFm()
+        # A gas of several heavy-flavour species, e.g. charm hadrons with q = 1 and J/ψ with q = 2.
+        hadrons = [HadronSpecies(1.87,4,(1,)),HadronSpecies(2.29,4,(1,)),HadronSpecies(3.1,3,(2,))]
+        hh = HeavyQuark(; particles=hadrons)
+        hrg = HadronResonanceGas(hadrons)
+        @test hh.charm.particles == hrg.particles
+        thh = thermodynamic(hh,x)
+        hrgx = thermodynamic(hrg,x)
+        @test thh.pressure ≈ bulk.pressure + hrgx.pressure
+        @test entropy_density(thh) ≈ entropy_density(bulk) + entropy_density(hrgx)
+        @test charge_density(thh,1) == charge_density(hrgx,1)
+        @test thh.hessian[2,2] == hrgx.hessian[2,2]
+        @test pressure(hh,x) ≈ thh.pressure
+        @test HeavyQuark(FluidumEOS(),hrg).charm.particles == hrg.particles
+        @test thermodynamic(HeavyQuark(; particles=hadrons,backreaction=false),x).pressure == bulk.pressure
         two = HadronResonanceGas([HadronSpecies(1.5,6,(1,)),HadronSpecies(1.5,6,(-1,))])
-        @test_throws ArgumentError HeavyQuark(FluidumEOS(),two)
+        @test length(HeavyQuark(FluidumEOS(),two).charm.particles) == 2
+        @test_throws DimensionMismatch HeavyQuark(FluidumEOS(),HadronResonanceGas([HadronSpecies(1.5,6,(1,0))]))
         @test_throws ArgumentError HeavyQuark(FluidumEOS(units=FluidumThermodynamics.GeVFm()),hq.charm)
     end
 end

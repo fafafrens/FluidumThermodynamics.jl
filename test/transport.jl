@@ -166,6 +166,79 @@ end
     @test_throws MethodError CharmTransport(eos,DsT)
 end
 
+@testset "Hadronic charm diffusion" begin
+    DsT, m = 0.2, 1.5
+    x = GrandCanonicalPoint(0.16,0.04)
+    zero_model(charge) = TransportModel(ZeroShearTransport(),ZeroBulkTransport(),charge)
+    # A single quark species (q = 1) is the free-charm prescription of CharmTransport.
+    hq = HeavyQuark(mass=m)
+    th = thermodynamic(hq,x)
+    model = HadronicCharmDiffusion(DsT,hq)
+    @test model isa HadronicCharmDiffusion && model.species == hq.charm.particles
+    tr = transport(zero_model(model),x,th)
+    ref = transport(zero_model(CharmTransport(hq,DsT)),x,th)
+    @test tr.charge.kappa ≈ ref.charge.kappa && tr.charge.tau ≈ ref.charge.tau
+    @test tr.charge.kappa isa SMatrix{1,1,Float64} && tr.charge.tau isa SMatrix{1,1,Float64}
+    gevfm = HeavyQuark(mass=m,units=FluidumThermodynamics.GeVFm())
+    thg = thermodynamic(gevfm,x)
+    trg = transport(zero_model(HadronicCharmDiffusion(DsT,gevfm)),x,thg)
+    refg = transport(zero_model(CharmTransport(gevfm,DsT)),x,thg)
+    @test trg.charge.kappa ≈ refg.charge.kappa && trg.charge.tau ≈ refg.charge.tau
+
+    # Charm hadrons from the FastReso list, with J/ψ at q = 2.
+    hadrons = read_particle_list(charm_list_file)
+    hh = HeavyQuark(; particles=hadrons)
+    thh = thermodynamic(hh,x)
+    trh = transport(zero_model(HadronicCharmDiffusion(DsT,hadrons)),x,thh)
+    # Literal transcription of Fluidum's `normalization` and `τ_diffusion_hadron`
+    # (natural units, μ there is the fugacity exponent μ/T).
+    T, α = x.T, x.μ[1]/x.T
+    bk(ν,z) = FluidumThermodynamics.besselkx(ν,z)*exp(-z)
+    norm, tauq = 0.0, 0.0
+    for s in hadrons
+        mi, deg, q = s.mass, s.degeneracy, s.charges[1]
+        b1, b2 = bk(1,mi/T), bk(2,mi/T)
+        b3 = b1+4/(mi/T)*b2
+        b4 = b2+6/(mi/T)*b3
+        b5 = b3+8/(mi/T)*b4
+        norm += q^2*deg*(T/(2*pi^2)*mi^2*exp(q*α)*b2)
+        tauq += deg*((2*pi*DsT)/(192*pi^3*T^3)*q^2*mi^5*exp(q*α)*(2*b1-3*b3+b5))
+    end
+    @test trh.charge.kappa[1,1] ≈ DsT/T*norm
+    @test trh.charge.tau[1,1] ≈ tauq/norm
+    # For Boltzmann species the normalization is T·∂n/∂μ of the gas, not n: J/ψ counts with q².
+    @test trh.charge.kappa[1,1] ≈ DsT*susceptibilities(thh)[1,1]
+    @test !(trh.charge.kappa[1,1] ≈ DsT/T*charge_density(thh,1))
+    open_charm = filter(s -> s.charges[1] == 1,hadrons)
+    tho = thermodynamic(HadronResonanceGas(open_charm),x)
+    tro = transport(zero_model(HadronicCharmDiffusion(DsT,open_charm)),x,tho)
+    @test tro.charge.kappa[1,1] ≈ DsT/T*charge_density(tho,1)
+    # The species list, not the fluid EOS, sets κ and τ, as in Fluidum.
+    @test transport(zero_model(HadronicCharmDiffusion(DsT,hadrons)),x,th).charge.kappa == trh.charge.kappa
+    @test HadronicCharmDiffusion(DsT,hh.charm).species == hadrons
+
+    # Callable D_s T through a fluid model: type-stable and allocation-free.
+    linear = (x,th) -> 1.2*x.T + 0.05
+    fluid = FluidModel(hh,TransportModel(ConstantEtaOverS(0.16,5.0),ConstantZetaOverS(0.03,10.0),
+                                         HadronicCharmDiffusion(linear,hh)))
+    thf, trf = @inferred transport(fluid,x)
+    @test trf.charge.kappa[1,1] ≈ trh.charge.kappa[1,1]*linear(x,thh)/DsT
+    @test trf.charge.tau[1,1] ≈ trh.charge.tau[1,1]*linear(x,thh)/DsT
+    @test charm_allocations(fluid,x) == 0
+    @test transport_perturbation(fluid,x)[2].charge.kappa ≈ trf.charge.kappa
+
+    # No chemical potential: no charge sector. Several charges are rejected.
+    none = transport(FluidModel(hh,zero_model(HadronicCharmDiffusion(DsT,hadrons))),GrandCanonicalPoint(x.T))
+    @test size(none[2].charge.kappa) == (0,0)
+    eos = PolynomialMultiChargeEOS(3.0,@SMatrix [2.0 0.3; 0.3 1.5])
+    xm = GrandCanonicalPoint(0.2,0.03,-0.01)
+    @test_throws DimensionMismatch transport(zero_model(HadronicCharmDiffusion(DsT,hadrons)),xm,thermodynamic(eos,xm))
+    @test_throws ArgumentError HadronicCharmDiffusion(DsT,HadronSpecies{Float64,1}[])
+    @test_throws DimensionMismatch HadronicCharmDiffusion(DsT,[HadronSpecies(1.87,2,(1,0))])
+    # CharmTransport needs one mass.
+    @test_throws ArgumentError CharmTransport(hh,DsT)
+end
+
 function functional_allocations(fluid, x)
     transport(fluid,x)
     @allocated(transport(fluid,x))

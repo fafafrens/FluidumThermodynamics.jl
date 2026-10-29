@@ -6,6 +6,11 @@
 # τ = Σ qᵢ²nᵢτᵢ / Σ qᵢ²nᵢ, the χ-weighted mean of the single-species
 # relaxation times τᵢ = DₛT zᵢ³/(48T) (2K₁-3K₃+K₅)/K₂, zᵢ = mᵢ/T.
 #
+# The second part reads the charm hadrons from a FastReso particle list and
+# uses the built-in `HadronicCharmDiffusion`, Fluidum's `diffusion_hadron`
+# prescription, which normalizes κ = DₛT·Σqᵢ²nᵢ/T by Σqᵢ²nᵢ instead of
+# n = Σqᵢnᵢ; the two differ only through J/ψ (q = 2).
+#
 # Run with `julia --project=. examples/hadronic_charm_diffusion.jl`; including
 # the file only defines `CharmHadronCtau`.
 
@@ -73,5 +78,22 @@ if abspath(PROGRAM_FILE) == @__FILE__
                 rpad(round(tr.charge.kappa[1,1],sigdigits=4),13),
                 rpad(round(tr.charge.tau[1,1],sigdigits=4),20),
                 round(trq.charge.tau[1,1],sigdigits=4))
+    end
+
+    # Charm hadrons read from a FastReso list (charge Nc + Nac, antiparticles
+    # included), in a HeavyQuark fluid with Fluidum's hadronic diffusion.
+    file = joinpath(@__DIR__,"..","test","fixtures","particles_charm.data")
+    listed = read_particle_list(file)
+    hq = HeavyQuark(; particles=listed)
+    fluid_list = FluidModel(hq,TransportModel(ZeroShearTransport(),ZeroBulkTransport(),
+                                              HadronicCharmDiffusion(DsT,hq)))
+    println()
+    println(length(listed)," charm hadrons from ",basename(file))
+    println("T [GeV]   n_c [GeV³]     κ [GeV²]     τ [GeV⁻¹]")
+    for T in (0.12,0.14,0.16,0.18)
+        th, tr = transport(fluid_list,GrandCanonicalPoint(T,0.0))
+        println(rpad(T,9)," ",rpad(round(charge_density(th,1),sigdigits=4),14),
+                rpad(round(tr.charge.kappa[1,1],sigdigits=4),13),
+                round(tr.charge.tau[1,1],sigdigits=4))
     end
 end

@@ -63,3 +63,33 @@ requiring the caller to rebuild its particle list.
 
 Generic canonical and microcanonical inversion work with an explicit initial
 guess. Your charge basis and spectrum must give a nonsingular inversion Jacobian.
+
+## Reading particle lists
+
+`read_particle_list(file)` builds the species from a FastReso particle list
+(`particles.data` format, columns `name mass gamma spin isospin I3 Nq Ns Naq
+Nas Nc Nac MC`, masses in GeV), as Fluidum's `readresonancelist` does.
+`read_particle_table(file)` returns the raw rows as NamedTuples.
+
+```julia
+charm = read_particle_list("particles_charm.data")   # charge Nc + Nac, open charm and J/ψ
+hq = HeavyQuark(; particles=charm)                    # bulk EOS + charm hadron gas
+```
+
+Each row is one isospin state with degeneracy `2·spin + 1`. FastReso lists
+omit antiparticles, so by default (`antiparticles=true`) the degeneracy is
+doubled for every row that is not self-conjugate (`Nq = Naq`, `Ns = Nas`,
+`Nc = Nac`, `I3 = 0`). The conjugate then carries the same charges, which is
+right for the heavy-quark count `charm_count(row) = Nc + Nac` (1 for D mesons
+and charm baryons, 2 for J/ψ). For charges that change sign, such as baryon
+number, pass `antiparticles=false` and add the conjugates yourself. Keywords:
+
+- `charges = row -> (charm_count(row),)`: the charge tuple of each row, which
+  sets the basis.
+- `condition`: row filter; by default rows whose charges all vanish are
+  dropped, so a full light+charm list yields only the charm hadrons.
+- `minmass = 0`, `maxmass = Inf`: open mass window, as in Fluidum.
+- `statistics = :boltzmann`: or `:boson`, `:fermion`, or `:quantum` (chosen by
+  the spin).
+
+Masses stay in GeV; use an EOS whose energy unit is GeV.

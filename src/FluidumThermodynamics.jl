@@ -59,6 +59,7 @@ export AbstractEquationOfState,
        ConstantChargeTransport,
        CharmTransport,
        CharmCtau,
+       HadronicCharmDiffusion,
        ConstantKappaOverT2,
        ConstantDsT,
        EinsteinDiffusion,
@@ -81,6 +82,9 @@ export AbstractEquationOfState,
        FluidumEOS,
        HadronSpecies,
        HadronResonanceGas,
+       read_particle_table,
+       read_particle_list,
+       charm_count,
        HeavyQuark,
        TabulatedEOS,
        InversionError
@@ -97,6 +101,7 @@ include("second_order.jl")
 include("transport.jl")
 include("models.jl")
 include("hadron_resonance_gas.jl")
+include("particle_list.jl")
 include("heavy_quark.jl")
 include("tabulated.jl")
 

@@ -1,23 +1,27 @@
 """
-    HeavyQuark(; mass=1.5, bulk=FluidumEOS(), units=unit_system(bulk), backreaction=true)
+    HeavyQuark(; mass=1.5, particles=nothing, bulk=FluidumEOS(), units=unit_system(bulk), backreaction=true)
     HeavyQuark(bulk, charm; backreaction=true)
 
 Bulk EOS carrying one conserved heavy-quark charge, modeled on Fluidum's
 `Heavy_Quark`. `bulk` is evaluated at zero chemical potential; `charm` is a
-Boltzmann gas of a single heavy-quark species with degeneracy 6 (spin × color)
-and unit charge at chemical potential `μ[1]`, and supplies the charge sector
-(density, its temperature derivative, and susceptibility). Antiquarks are not
-included.
+`HadronResonanceGas` of heavy-quark-carrying species with a single charge, the
+heavy-quark count of each species, at chemical potential `μ[1]`, and supplies
+the charge sector (density, its temperature derivative, and susceptibility).
+By default `charm` is a Boltzmann gas of the free quark with degeneracy 6
+(spin × color), unit charge, and mass `mass`; antiquarks are not included.
+`particles`, a list of `HadronSpecies` such as `read_particle_list(file)`,
+replaces the quark by a gas of charm hadrons.
 
 With `backreaction=true` the pressure is `p_bulk(T) + p_charm(T, μ)`, so the
 state derives from a single potential and the Maxwell relations and
-Gibbs-Duhem hold; the quark gas then also contributes to entropy and heat
+Gibbs-Duhem hold; the heavy gas then also contributes to entropy and heat
 capacity. With `backreaction=false` the temperature sector is the bulk alone,
-as in Fluidum, where the quark gas does not back-react on the bulk.
+as in Fluidum, where the heavy gas does not back-react on the bulk.
 
 Points may omit the chemical potential, which is then zero and the state
-carries temperature derivatives only. `mass` uses the energy unit of `units`;
-`bulk` is converted to `units` when its convention differs.
+carries temperature derivatives only. `mass` and the particle masses use the
+energy unit of `units`; `bulk` is converted to `units` when its convention
+differs.
 """
 struct HeavyQuark{U,B<:AbstractEquationOfState{U},C<:HadronResonanceGas{U},S,R} <: AbstractEquationOfState{U}
     bulk::B
@@ -27,16 +31,16 @@ struct HeavyQuark{U,B<:AbstractEquationOfState{U},C<:HadronResonanceGas{U},S,R} 
                         backreaction::Bool=true) where {U,V}
         U === V || throw(ArgumentError(
             "bulk and heavy-quark gas use different unit systems ($U and $V); use convert_units first"))
-        length(charm.particles) == 1 || throw(ArgumentError("heavy-quark gas must contain exactly one species"))
         length(charm.particles[1].charges) == 1 || throw(DimensionMismatch("heavy-quark gas must carry a single charge"))
         scale = unit_scale(bulk)
         new{U,typeof(bulk),typeof(charm),typeof(scale),backreaction}(bulk,charm,scale)
     end
 end
 
-function HeavyQuark(; mass=1.5, bulk::AbstractEquationOfState=FluidumEOS(),
+function HeavyQuark(; mass=1.5, particles=nothing, bulk::AbstractEquationOfState=FluidumEOS(),
                     units::AbstractUnitSystem=unit_system(bulk), backreaction::Bool=true)
-    charm = HadronResonanceGas([HadronSpecies(mass,6,(1,); statistics=:boltzmann)]; units)
+    species = isnothing(particles) ? [HadronSpecies(mass,6,(1,); statistics=:boltzmann)] : particles
+    charm = HadronResonanceGas(species; units)
     HeavyQuark(convert_units(units,bulk),charm; backreaction)
 end
 
@@ -44,7 +48,11 @@ end
 @inline backreaction(::HeavyQuark{U,B,C,S,R}) where {U,B,C,S,R} = R
 
 # Charm mass in the EOS energy unit, used by `CharmTransport`.
-@inline heavy_quark_mass(eos::HeavyQuark) = eos.charm.particles[1].mass
+function heavy_quark_mass(eos::HeavyQuark)
+    length(eos.charm.particles) == 1 || throw(ArgumentError(
+        "CharmTransport needs a single heavy-quark species; use HadronicCharmDiffusion for a hadron gas"))
+    eos.charm.particles[1].mass
+end
 
 # The quark gas takes the point as is: an omitted chemical potential is zero,
 # and it rejects points with more than one charge.
@@ -147,3 +155,77 @@ callable `(x, th)` as in `EinsteinDiffusion`.
 """
 CharmTransport(mass::Real, DsT) = EinsteinDiffusion(DsT,CharmCtau(mass))
 CharmTransport(hq::HeavyQuark, DsT) = CharmTransport(heavy_quark_mass(hq),DsT)
+
+"""
+    HadronicCharmDiffusion(DsT, species)
+    HadronicCharmDiffusion(DsT, hrg::HadronResonanceGas)
+    HadronicCharmDiffusion(DsT, hq::HeavyQuark)
+
+Charm diffusion in a gas of charm hadrons, Fluidum's `diffusion_hadron` and
+`τ_diffusion_hadron`. Every species is a Boltzmann gas with the heavy-quark
+count `qᵢ` as its single charge (`Nc + Nac`, as from `read_particle_list`), at
+the fugacity `exp(qᵢμ/T)` of the point. With `nᵢ` the species densities,
+
+    κ = DₛT · Σqᵢ²nᵢ / T,        τ = Σqᵢ²nᵢτᵢ / Σqᵢ²nᵢ,
+
+where `τᵢ = DₛT zᵢ³/(48T)·(2K₁ - 3K₃ + K₅)/K₂`, `zᵢ = mᵢ/T`, is the free
+relaxation time of species `i` (as in `CharmCtau`). The normalization
+`Σqᵢ²nᵢ` replaces the density `n = Σqᵢnᵢ` of `EinsteinDiffusion`; for a
+Boltzmann gas it is `T·∂n/∂μ`, and the two coincide when every `qᵢ = 1`, where
+a single species reduces to `CharmTransport`. J/ψ (`q = 2`) makes them differ.
+
+κ and τ come from `species`, not from the EOS state, so the hadron list may
+differ from the gas that sets the fluid's charm density, as in Fluidum, where
+the fluid EOS is the free quark. Quantum statistics of the species are ignored.
+`DsT` is the dimensionless `DₛT`, a number or a callable `(x, th)`. Masses use
+the energy unit of the fluid, and κ and τ follow the unit convention of the
+state. The point must carry the heavy-quark chemical potential only; with no
+chemical potential there is no charge sector.
+"""
+struct HadronicCharmDiffusion{D,T} <: AbstractChargeTransport
+    DsT::D
+    species::Vector{HadronSpecies{T,1}}
+    function HadronicCharmDiffusion(DsT, species::AbstractVector{<:HadronSpecies})
+        isempty(species) && throw(ArgumentError("supply at least one heavy-flavour species"))
+        all(s -> length(s.charges) == 1, species) ||
+            throw(DimensionMismatch("species must carry a single charge, the heavy-quark count"))
+        T = promote_type(map(s -> typeof(s.mass),species)...)
+        typed = [HadronSpecies(T(s.mass),T(s.degeneracy),SVector{1,T}(s.charges),s.statistics) for s in species]
+        d = _callable(DsT)
+        new{typeof(d),T}(d,typed)
+    end
+end
+
+HadronicCharmDiffusion(DsT, hrg::HadronResonanceGas) = HadronicCharmDiffusion(DsT,hrg.particles)
+HadronicCharmDiffusion(DsT, hq::HeavyQuark) = HadronicCharmDiffusion(DsT,hq.charm)
+
+@inline function charge_state(model::HadronicCharmDiffusion{D,E}, x::GrandCanonicalPoint{R,1}, th) where {D,E,R}
+    T = x.T
+    α = x.μ[1]/T
+    V = promote_type(E,R)
+    norm = zero(V)       # Σq²nᵢ in energy³
+    weighted = zero(V)   # Σq²nᵢτᵢ/DₛT
+    for s in model.species
+        q = s.charges[1]
+        z = s.mass/T
+        # Scaled Bessel functions: e^{-z} is restored in the fugacity factor.
+        b1, b2 = besselkx(1,z), besselkx(2,z)
+        b3 = muladd(4/z,b2,b1)
+        b4 = muladd(6/z,b3,b2)
+        b5 = muladd(8/z,b4,b3)
+        qqn = q*q*s.degeneracy*s.mass^2*T/(2*pi^2)*exp(q*α - z)*b2
+        norm += qqn
+        weighted += qqn*z^3/(48*T)*(2*b1 - 3*b3 + b5)/b2
+    end
+    DsT = model.DsT(x,th)
+    units = unit_system(th)
+    κ = _kappa_from_DsT(DsT,unit_scale(units)*norm,T,units)
+    τ = DsT*weighted/norm*hbarc(units)
+    ChargeState(SMatrix{1,1}(κ),SMatrix{1,1}(τ))
+end
+
+@inline charge_state(::HadronicCharmDiffusion, x::GrandCanonicalPoint{T,0}, th) where {T} =
+    charge_state(ZeroChargeTransport(),x,th)
+
+charge_state(::HadronicCharmDiffusion, x::GrandCanonicalPoint{T,N}, th) where {T,N} =
+    throw(DimensionMismatch("HadronicCharmDiffusion needs one chemical potential, the heavy-quark one; got $N"))
