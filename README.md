@@ -450,6 +450,47 @@ example equations, and extension interface, and run
 `julia --project=. examples/hadronic_charm_diffusion.jl` for a state-dependent
 charm relaxation time from a hadron list.
 
+## Perturbation states: third derivatives and transport gradients
+
+Linearised hydrodynamics around a background needs one derivative more than
+the background itself: the perturbation of the Hessian brings in
+`∂³p/∂yᵢ∂yⱼ∂yₖ`, and the perturbation of the constitutive relations brings in
+the gradients of the transport coefficients. `thermodynamic` and `transport`
+are unchanged; two parallel entry points provide the extra information.
+
+```julia
+fluid = FluidModel(IdealQCD(3,2),
+                   TransportModel(ConstantEtaOverS(0.16,0.2), ConstantZetaOverS(0.03,0.2),
+                                  ZeroChargeTransport()))
+x = GrandCanonicalPoint(0.2,0.03)
+
+th = thermodynamic_perturbation(fluid.eos,x)   # ThermodynamicPerturbationState
+th.third                                      # SArray{Tuple{2,2,2}}: ∂³p/∂yᵢ∂yⱼ∂yₖ, y = (T, μ)
+third_derivative(th,1,1,1)                    # p‴ with respect to T
+entropy_density(th), speed_of_sound_squared(x,th)   # every ThermodynamicState accessor works
+ThermodynamicState(th)                        # drop the tensor
+
+th, tr = transport_perturbation(fluid,x)
+tr.shear.eta, tr.shear.tau                    # as in transport
+tr.shear.eta_gradient, tr.shear.tau_gradient  # SVector (∂/∂T, ∂/∂μ)
+tr.bulk.zeta_gradient, tr.bulk.tau_gradient
+ShearState(tr.shear), BulkState(tr.bulk)      # plain states
+```
+
+- The generic `thermodynamic_perturbation` differentiates `pressure(eos, x)`
+  with nested ForwardDiff; `IdealQCD` is analytic; the EOS algebra,
+  `convert_units` and `HeavyQuark` compose their parts; `TabulatedEOS` throws,
+  since a cubic interpolant has no meaningful third derivative. Both state
+  types share the supertype `AbstractThermodynamicState`, so `transport` and
+  all derived quantities accept either.
+- `ConstantEtaOverS` and `ConstantZetaOverS` are differentiated analytically
+  from the gradient and Hessian already in the state (`∇η = (η/s) ∇s`,
+  `∇(ε+p) = ∇p + ∇²p·y`). Other shear and bulk models fall back to ForwardDiff
+  through `thermodynamic(eos, ·)`. The charge sector and the second-order
+  coefficients are returned as in `transport`, without gradients.
+- Unit conversion scales the third-derivative tensor by one more inverse
+  energy than the Hessian.
+
 ## Provenance and validation
 
 Reproducible FluidumEOS timings, comparison with the original Fluidum kernel,

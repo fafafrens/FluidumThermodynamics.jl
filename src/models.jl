@@ -92,6 +92,24 @@ end
     ThermodynamicState(eos,pressure(eos,x), SVector(s,n), SMatrix{2,2}(hTT,hTμ,hTμ,hμμ))
 end
 
+# Third derivatives of the quartic pressure: ∂³p/∂T³ = a1 T, ∂³p/∂T²∂μ = a2 μ,
+# ∂³p/∂T∂μ² = a2 T, ∂³p/∂μ³ = a3 μ (times the unit scale).
+@inline function thermodynamic_perturbation(eos::IdealQCD, x::GrandCanonicalPoint{T,0}) where {T}
+    th = thermodynamic(eos,x)
+    ThermodynamicPerturbationState(eos,th.pressure,th.gradient,th.hessian,
+                                   SArray{Tuple{1,1,1}}(unit_scale(eos)*eos.a1*x.T))
+end
+
+@inline function thermodynamic_perturbation(eos::IdealQCD, x::GrandCanonicalPoint{T,1}) where {T}
+    th = thermodynamic(eos,x)
+    t, μ = x.T, x.μ[1]
+    scale = unit_scale(eos)
+    ttt, ttμ, tμμ, μμμ = scale*eos.a1*t, scale*eos.a2*μ, scale*eos.a2*t, scale*eos.a3*μ
+    # column-major (i,j,k): 111 211 121 221 112 212 122 222
+    C = SArray{Tuple{2,2,2}}(ttt,ttμ,ttμ,tμμ,ttμ,tμμ,tμμ,μμμ)
+    ThermodynamicPerturbationState(eos,th.pressure,th.gradient,th.hessian,C)
+end
+
 """
     grandcanonical(eos::IdealQCD, target::CanonicalPoint)
 

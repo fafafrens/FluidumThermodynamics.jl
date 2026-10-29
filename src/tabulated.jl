@@ -156,6 +156,12 @@ end
     ThermodynamicState(eos,p,SVector(s),SMatrix{1,1}(dsdT))
 end
 
+# The cubic Hermite interpolant has a piecewise-linear, discontinuous third derivative:
+# not a usable ∂³p/∂T³. Perturbation matrices need an analytic EOS.
+function thermodynamic_perturbation(eos::TabulatedEOS, x::GrandCanonicalPoint)
+    throw(ArgumentError("TabulatedEOS has no reliable third derivative (cubic Hermite interpolant); use an analytic EOS for thermodynamic_perturbation"))
+end
+
 @inline function pressure(eos::TabulatedEOS, x::GrandCanonicalPoint)
     _check_zero_charge(x)
     first(_tabulated_state(eos,x.T))

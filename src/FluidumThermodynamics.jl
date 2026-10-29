@@ -19,7 +19,12 @@ export AbstractEquationOfState,
        GrandCanonicalPoint,
        CanonicalPoint,
        MicrocanonicalPoint,
+       AbstractThermodynamicState,
        ThermodynamicState,
+       ThermodynamicPerturbationState,
+       thermodynamic_perturbation,
+       third_derivatives,
+       third_derivative,
        pressure,
        thermodynamic,
        entropy_density,
@@ -66,7 +71,10 @@ export AbstractEquationOfState,
        BulkState,
        ChargeState,
        TransportState,
+       ShearPerturbationState,
+       BulkPerturbationState,
        transport,
+       transport_perturbation,
        PolynomialMultiChargeEOS,
        IdealQCD,
        FluiduMEoS,
@@ -83,6 +91,7 @@ include("points.jl")
 include("equation_of_state.jl")
 include("bessel.jl")
 include("thermodynamics.jl")
+include("perturbation.jl")
 include("inversion.jl")
 include("second_order.jl")
 include("transport.jl")
