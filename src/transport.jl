@@ -319,7 +319,7 @@ end
 @inline charge_state(::EinsteinDiffusion, x::GrandCanonicalPoint{T,0}, th) where {T} =
     charge_state(ZeroChargeTransport(),x,th)
 
-@inline function transport(model::TransportModel, x::GrandCanonicalPoint, th::ThermodynamicState)
+@inline function transport(model::TransportModel, x::GrandCanonicalPoint, th::AbstractThermodynamicState)
     leading = TransportState(
         shear_state(model.shear,x,th),
         bulk_state(model.bulk,x,th),
@@ -347,3 +347,147 @@ coordinates in the EOS unit convention.
 
 @inline transport(fluid::FluidModel, T::Real, μ::SVector) =
     transport(fluid, GrandCanonicalPoint(T, μ))
+
+# ============================================================================
+# Perturbation (linearised) transport: coefficients with their gradients in the
+# grand-canonical coordinates y = (T, μ₁, ..., μₙ). The perturbation equations
+# contain ∂η/∂T etc. through the linearisation of the constitutive relations.
+# ============================================================================
+
+"""
+    ShearPerturbationState(eta, tau, eta_gradient, tau_gradient)
+
+Shear viscosity and relaxation time together with their gradients
+`(∂/∂T, ∂/∂μ₁, ...)` in grand-canonical coordinates, as `SVector`s.
+`ShearState(s)` drops the gradients.
+"""
+struct ShearPerturbationState{T,D,G<:SVector{D,T}}
+    eta::T
+    tau::T
+    eta_gradient::G
+    tau_gradient::G
+end
+
+"""
+    BulkPerturbationState(zeta, tau, zeta_gradient, tau_gradient)
+
+Bulk viscosity and relaxation time with their grand-canonical gradients.
+`BulkState(b)` drops the gradients.
+"""
+struct BulkPerturbationState{T,D,G<:SVector{D,T}}
+    zeta::T
+    tau::T
+    zeta_gradient::G
+    tau_gradient::G
+end
+
+function ShearPerturbationState(eta, tau, deta::SVector{D}, dtau::SVector{D}) where {D}
+    T = promote_type(typeof(eta),typeof(tau),eltype(deta),eltype(dtau))
+    ShearPerturbationState{T,D,SVector{D,T}}(T(eta),T(tau),SVector{D,T}(deta),SVector{D,T}(dtau))
+end
+
+function BulkPerturbationState(zeta, tau, dzeta::SVector{D}, dtau::SVector{D}) where {D}
+    T = promote_type(typeof(zeta),typeof(tau),eltype(dzeta),eltype(dtau))
+    BulkPerturbationState{T,D,SVector{D,T}}(T(zeta),T(tau),SVector{D,T}(dzeta),SVector{D,T}(dtau))
+end
+
+ShearState(s::ShearPerturbationState) = ShearState(s.eta,s.tau)
+BulkState(b::BulkPerturbationState) = BulkState(b.zeta,b.tau)
+
+# ∇(ε + p) = ∇(y⋅∇p) = ∇p + ∇²p y.
+@inline _enthalpy_gradient(x::GrandCanonicalPoint, th::AbstractThermodynamicState) =
+    th.gradient + th.hessian*coordinates(x)
+
+# Analytic rules for the constant η/s, ζ/s models: everything follows from the
+# gradient and Hessian already in the state.  η = (η/s) s, τ = ℏc η/(Cτ w).
+@inline function shear_perturbation(model::ConstantEtaOverS, eos::AbstractEquationOfState,
+                                    x::GrandCanonicalPoint, th::AbstractThermodynamicState)
+    s, ds = entropy_density(th), th.hessian[1,:]
+    eta, deta = model.eta_over_s*s, model.eta_over_s*ds
+    w, dw = enthalpy(x,th), _enthalpy_gradient(x,th)
+    c = hbarc(unit_system(th))/model.Ctau
+    ShearPerturbationState(eta, c*eta/w, deta, c*(deta/w - eta*dw/w^2))
+end
+
+@inline function bulk_perturbation(model::ConstantZetaOverS, eos::AbstractEquationOfState,
+                                   x::GrandCanonicalPoint, th::AbstractThermodynamicState)
+    s, ds = entropy_density(th), th.hessian[1,:]
+    zeta, dzeta = model.zeta_over_s*s, model.zeta_over_s*ds
+    w, dw = enthalpy(x,th), _enthalpy_gradient(x,th)
+    c = hbarc(unit_system(th))/model.Ctau
+    BulkPerturbationState(zeta, c*zeta/w, dzeta, c*(dzeta/w - zeta*dw/w^2))
+end
+
+@inline function shear_perturbation(::ZeroShearTransport, eos::AbstractEquationOfState,
+                                    x::GrandCanonicalPoint{T,N}, th::AbstractThermodynamicState) where {T,N}
+    z = zero(th.pressure)
+    zs = zero(SVector{N+1,typeof(z)})
+    ShearPerturbationState(z,z,zs,zs)
+end
+
+@inline function bulk_perturbation(::ZeroBulkTransport, eos::AbstractEquationOfState,
+                                   x::GrandCanonicalPoint{T,N}, th::AbstractThermodynamicState) where {T,N}
+    z = zero(th.pressure)
+    zs = zero(SVector{N+1,typeof(z)})
+    BulkPerturbationState(z,z,zs,zs)
+end
+
+# Generic fallback: differentiate the model through the EOS with ForwardDiff. The
+# state is re-evaluated at a dual point, so `thermodynamic(eos, ·)` must be
+# differentiable (true for the analytic models and the generic AD fallback).
+function shear_perturbation(model::AbstractShearTransport, eos::AbstractEquationOfState,
+                            x::GrandCanonicalPoint, th::AbstractThermodynamicState)
+    y = coordinates(x)
+    F(z) = (pt = grandcanonical_from_coordinates(z);
+            st = shear_state(model,pt,thermodynamic(eos,pt));
+            SVector(st.eta,st.tau))
+    J = ForwardDiff.jacobian(F,y)
+    st = shear_state(model,x,th)
+    ShearPerturbationState(st.eta,st.tau,J[1,:],J[2,:])
+end
+
+function bulk_perturbation(model::AbstractBulkTransport, eos::AbstractEquationOfState,
+                           x::GrandCanonicalPoint, th::AbstractThermodynamicState)
+    y = coordinates(x)
+    F(z) = (pt = grandcanonical_from_coordinates(z);
+            st = bulk_state(model,pt,thermodynamic(eos,pt));
+            SVector(st.zeta,st.tau))
+    J = ForwardDiff.jacobian(F,y)
+    st = bulk_state(model,x,th)
+    BulkPerturbationState(st.zeta,st.tau,J[1,:],J[2,:])
+end
+
+"""
+    transport_perturbation(fluid, x::GrandCanonicalPoint) -> (th, tr)
+    transport_perturbation(fluid, T, μ...)
+    transport_perturbation(model::TransportModel, eos, x, th)
+
+Transport coefficients for linearised hydrodynamics: like [`transport`](@ref),
+but `th` is a [`ThermodynamicPerturbationState`](@ref) and the shear and bulk
+sectors are [`ShearPerturbationState`](@ref) / [`BulkPerturbationState`](@ref),
+carrying the gradients of `η, τπ, ζ, τΠ` in the grand-canonical coordinates.
+`ConstantEtaOverS` and `ConstantZetaOverS` are differentiated analytically from
+the stored gradient and Hessian; other models by ForwardDiff through the EOS.
+The charge sector and the second-order coefficients are evaluated as in
+`transport`, without gradients.
+"""
+function transport_perturbation(model::TransportModel, eos::AbstractEquationOfState,
+                                x::GrandCanonicalPoint, th::AbstractThermodynamicState)
+    shear = shear_perturbation(model.shear,eos,x,th)
+    bulk = bulk_perturbation(model.bulk,eos,x,th)
+    charge = charge_state(model.charge,x,th)
+    leading = TransportState(ShearState(shear),BulkState(bulk),charge)
+    second_order = _validate_second_order(second_order_state(model.second_order,x,th,leading),x)
+    TransportState(shear,bulk,charge,second_order)
+end
+
+function transport_perturbation(fluid::FluidModel, x::GrandCanonicalPoint)
+    th = thermodynamic_perturbation(fluid.eos,x)
+    th, transport_perturbation(fluid.transport,fluid.eos,x,th)
+end
+
+@inline transport_perturbation(fluid::FluidModel, T::Real, μ::Real...) =
+    transport_perturbation(fluid, GrandCanonicalPoint(T, μ...))
+
+@inline transport_perturbation(fluid::FluidModel, T::Real, μ::SVector) =
+    transport_perturbation(fluid, GrandCanonicalPoint(T, μ))

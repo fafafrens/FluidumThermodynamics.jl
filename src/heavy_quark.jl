@@ -71,6 +71,38 @@ function thermodynamic(eos::HeavyQuark, x::GrandCanonicalPoint{R,M}) where {R,M}
     ThermodynamicState(eos,p,g,H)
 end
 
+# Same composition as `thermodynamic`, one order higher: the TTT entry comes from the
+# bulk fluid (plus the quark gas with back-reaction); every entry with a charge index
+# comes from the quark gas alone.
+function thermodynamic_perturbation(eos::HeavyQuark, x::GrandCanonicalPoint{R,M}) where {R,M}
+    bulk = thermodynamic_perturbation(eos.bulk,GrandCanonicalPoint(x.T))
+    charm = thermodynamic_perturbation(eos.charm,x)
+    if backreaction(eos)
+        p = bulk.pressure + charm.pressure
+        s = bulk.gradient[1] + charm.gradient[1]
+        tt = bulk.hessian[1,1] + charm.hessian[1,1]
+        ttt = bulk.third[1,1,1] + charm.third[1,1,1]
+    else
+        p, s, tt, ttt = bulk.pressure, bulk.gradient[1], bulk.hessian[1,1], bulk.third[1,1,1]
+    end
+    M == 0 && return ThermodynamicPerturbationState(eos,p,SVector(s),SMatrix{1,1}(tt),SArray{Tuple{1,1,1}}(ttt))
+    g = SVector(s,charm.gradient[2])
+    H = SMatrix{2,2}(tt,charm.hessian[2,1],charm.hessian[1,2],charm.hessian[2,2])
+    # third[i,j,l] = ∂_l hessian[i,j] of the composed state: the TT entry is bulk (+ quark gas
+    # with back-reaction), every entry with a charge index is the quark gas. Without
+    # back-reaction the tensor is symmetric in (i,j) only, as the Hessian is then not the
+    # Hessian of the pressure.
+    C = SArray{Tuple{2,2,2}}(ntuple(Val(8)) do k
+        i, j, l = Tuple(CartesianIndices((2,2,2))[k])
+        if i == 1 && j == 1
+            l == 1 ? ttt : (backreaction(eos) ? charm.third[1,1,2] : zero(ttt))
+        else
+            charm.third[i,j,l]
+        end
+    end)
+    ThermodynamicPerturbationState(eos,p,g,H,C)
+end
+
 """
     CharmCtau(mass)
 

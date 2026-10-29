@@ -62,7 +62,7 @@ EOS constructors store this factor in their required `unit_scale` field;
 
 """
     unit_system(eos)
-    unit_system(th::ThermodynamicState)
+    unit_system(th::AbstractThermodynamicState)
 
 Return the singleton unit convention encoded in the object's type.
 """
@@ -70,7 +70,7 @@ function unit_system end
 
 """
     convert_units(target, eos)
-    convert_units(target, th::ThermodynamicState)
+    convert_units(target, th::AbstractThermodynamicState)
     convert_units(target, source, point)
 
 Return an EOS, evaluated state, or coordinate point in the target convention,
@@ -85,6 +85,7 @@ function convert_units end
     et,lt = energy_scale(target),length_scale(target)
     energy = es/et
     density = (lt/ls)^3
+    # Each derivative with respect to a grand-canonical coordinate divides by one energy unit.
     (energy=energy, pressure=energy*density, density=density,
-     hessian=density/energy)
+     hessian=density/energy, third=density/energy^2)
 end

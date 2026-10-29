@@ -1,5 +1,16 @@
 
 """
+    AbstractThermodynamicState{U,T,D}
+
+Supertype of the evaluated states: [`ThermodynamicState`](@ref) (pressure,
+gradient, Hessian) and [`ThermodynamicPerturbationState`](@ref) (the same plus
+the third-derivative tensor). `U` is the unit convention, `T` the element type,
+`D` the number of grand-canonical coordinates. Every derived quantity below
+(`entropy_density`, `enthalpy`, `speed_of_sound_squared`, ...) accepts either.
+"""
+abstract type AbstractThermodynamicState{U<:AbstractUnitSystem,T,D} end
+
+"""
     ThermodynamicState(eos, p, gradient, hessian)
     ThermodynamicState(p, gradient, hessian; units=NaturalGeV())
 
@@ -21,7 +32,7 @@ susceptibility matrix `χᵢⱼ = ∂nᵢ/∂μⱼ`.
 The unit convention is encoded in the state type. EOS evaluation inherits it
 from the model; the three-argument constructor is for manually supplied data.
 """
-struct ThermodynamicState{U<:AbstractUnitSystem,T,D,G,H}
+struct ThermodynamicState{U<:AbstractUnitSystem,T,D,G,H} <: AbstractThermodynamicState{U,T,D}
     pressure::T
     gradient::G
     hessian::H
@@ -38,7 +49,7 @@ end
 ThermodynamicState(eos::AbstractEquationOfState, p, g, H) =
     ThermodynamicState(p,g,H; units=unit_system(eos))
 
-@inline unit_system(::ThermodynamicState{U}) where {U} = U()
+@inline unit_system(::AbstractThermodynamicState{U}) where {U} = U()
 
 function convert_units(target::AbstractUnitSystem, th::ThermodynamicState)
     typeof(target) === typeof(unit_system(th)) && return th
@@ -100,17 +111,17 @@ end
     convert_units(unit_system(eos),th)
 end
 
-@inline entropy_density(th::ThermodynamicState) = th.gradient[1]
+@inline entropy_density(th::AbstractThermodynamicState) = th.gradient[1]
 
-@inline function charge_densities(th::ThermodynamicState{U,T,D}) where {U,T,D}
+@inline function charge_densities(th::AbstractThermodynamicState{U,T,D}) where {U,T,D}
     N = D - 1
     SVector{N,T}(ntuple(i -> th.gradient[i+1], N))
 end
 
-@inline charge_density(th::ThermodynamicState, i::Integer) = th.gradient[i+1]
-@inline susceptibility(th::ThermodynamicState, i::Integer, j::Integer) = th.hessian[i+1,j+1]
+@inline charge_density(th::AbstractThermodynamicState, i::Integer) = th.gradient[i+1]
+@inline susceptibility(th::AbstractThermodynamicState, i::Integer, j::Integer) = th.hessian[i+1,j+1]
 
-@inline function susceptibilities(th::ThermodynamicState{U,T,D}) where {U,T,D}
+@inline function susceptibilities(th::AbstractThermodynamicState{U,T,D}) where {U,T,D}
     N = D - 1
     SMatrix{N,N,T}(ntuple(k -> begin
         i = (k-1) % N + 1
@@ -126,7 +137,7 @@ Legendre transform
 
     ε = -p + T s + μ⋅n.
 """
-@inline function energy_density(x::GrandCanonicalPoint, th::ThermodynamicState)
+@inline function energy_density(x::GrandCanonicalPoint, th::AbstractThermodynamicState)
     -th.pressure + x.T*entropy_density(th) + dot(x.μ, charge_densities(th))
 end
 
@@ -136,7 +147,7 @@ end
 Enthalpy density `w = ε + p = T s + μ⋅n`, evaluated without the cancellation
 in `-p + T s + μ⋅n`.
 """
-@inline enthalpy(x::GrandCanonicalPoint, th::ThermodynamicState) =
+@inline enthalpy(x::GrandCanonicalPoint, th::AbstractThermodynamicState) =
     x.T*entropy_density(th) + dot(x.μ, charge_densities(th))
 
 """
@@ -145,7 +156,7 @@ in `-p + T s + μ⋅n`.
 Trace of the energy-momentum tensor, `ε - 3p`. It vanishes for a conformal EOS.
 Divide by `T^4` for the dimensionless interaction measure in natural units.
 """
-@inline trace_anomaly(x::GrandCanonicalPoint, th::ThermodynamicState) =
+@inline trace_anomaly(x::GrandCanonicalPoint, th::AbstractThermodynamicState) =
     energy_density(x,th) - 3*th.pressure
 
 """
@@ -159,7 +170,7 @@ They follow from the stored gradient and Hessian: with `y = (T, μ)`,
 `∂ε/∂y = yᵀ ∇²p` and `∂n/∂y` are the charge rows of `∇²p`. The Jacobian
 `∂(ε,n)/∂(T,μ)` must be nonsingular.
 """
-@inline function pressure_derivatives(x::GrandCanonicalPoint, th::ThermodynamicState{U,T,D}) where {U,T,D}
+@inline function pressure_derivatives(x::GrandCanonicalPoint, th::AbstractThermodynamicState{U,T,D}) where {U,T,D}
     y = SVector{D,T}(x.T, x.μ...)
     H = th.hessian
     dε = H'*y
@@ -180,7 +191,7 @@ Adiabatic speed of sound squared at fixed entropy per charge,
 
 With no charges this is `s/(T ∂s/∂T)`. Velocities are in units of `c`.
 """
-@inline function speed_of_sound_squared(x::GrandCanonicalPoint, th::ThermodynamicState)
+@inline function speed_of_sound_squared(x::GrandCanonicalPoint, th::AbstractThermodynamicState)
     dp = pressure_derivatives(x,th)
     n = charge_densities(th)
     # Static slice: `dp[2:end]` would build a Vector (allocates on Julia 1.10).
@@ -192,10 +203,10 @@ for f in (:enthalpy, :trace_anomaly, :pressure_derivatives, :speed_of_sound_squa
 end
 
 # Representation changes when the state has already been evaluated.
-@inline canonical(x::GrandCanonicalPoint, th::ThermodynamicState) =
+@inline canonical(x::GrandCanonicalPoint, th::AbstractThermodynamicState) =
     CanonicalPoint(x.T, charge_densities(th))
 
-@inline microcanonical(x::GrandCanonicalPoint, th::ThermodynamicState) =
+@inline microcanonical(x::GrandCanonicalPoint, th::AbstractThermodynamicState) =
     MicrocanonicalPoint(energy_density(x,th), charge_densities(th))
 
 # Convenience forms that evaluate the EOS once.
