@@ -66,30 +66,48 @@ guess. Your charge basis and spectrum must give a nonsingular inversion Jacobian
 
 ## Reading particle lists
 
-`read_particle_list(file)` builds the species from a FastReso particle list
-(`particles.data` format, columns `name mass gamma spin isospin I3 Nq Ns Naq
-Nas Nc Nac MC`, masses in GeV), as Fluidum's `readresonancelist` does.
-`read_particle_table(file)` returns the raw rows as NamedTuples.
+`read_particle_list(file)` builds the species from a FastReso particle list, as
+Fluidum's `readresonancelist` does; `read_particle_table(file)` returns the raw
+rows as NamedTuples. Two formats are recognized (`format=:auto` decides from
+the first row, or pass `:canonical` / `:therminator`):
+
+- **canonical**, the FastReso2 tables `particles_*.dat`:
+  `id name mass width degeneracy B S C Bot I Q [aliases...]`. The degeneracy is
+  given and antiparticles are rows of their own (negative PDG id); `C` is the
+  net charm.
+- **THERMINATOR**, the 13-column `particles.data` layout:
+  `name mass gamma spin isospin I3 Nq Ns Naq Nas Nc Nac MC`, one isospin state
+  per row with degeneracy `2·spin + 1` and no antiparticles.
 
 ```julia
-charm = read_particle_list("particles_charm.data")   # charge Nc + Nac, open charm and J/ψ
-hq = HeavyQuark(; particles=charm)                    # bulk EOS + charm hadron gas
+charm = read_particle_list("particles_charm.dat")     # c + c̄: D, D̄ → 1, J/ψ → 2
+hq = HeavyQuark(; particles=charm)                     # bulk EOS + charm hadron gas
+open_charm = read_particle_list("particles_charm.dat"; net=true)   # D → +1, D̄ → -1
 ```
 
-Each row is one isospin state with degeneracy `2·spin + 1`. FastReso lists
-omit antiparticles, so by default (`antiparticles=true`) the degeneracy is
-doubled for every row that is not self-conjugate (`Nq = Naq`, `Ns = Nas`,
-`Nc = Nac`, `I3 = 0`). The conjugate then carries the same charges, which is
-right for the heavy-quark count `charm_count(row) = Nc + Nac` (1 for D mesons
-and charm baryons, 2 for J/ψ). For charges that change sign, such as baryon
-number, pass `antiparticles=false` and add the conjugates yourself. Keywords:
+The default charge is `charm_count(row; net)`. With `net=false` (default) it is
+the heavy-quark count `c + c̄`: `Nc + Nac` for THERMINATOR rows, and for
+canonical rows the charm digits of the PDG id `±(n nr nL nq1 nq2 nq3 nJ)`.
+Quark-model states without a PDG id (e.g. `5000440`, an N*) have numbers whose
+digits are not flavours, so the digits are trusted only where they agree with
+`C`: `|C|` for open charm, 2 for a meson with `C = 0` whose two quark digits are
+both charm (J/ψ, χc, ψ(4040) = 9000443, …), 0 otherwise. With `net=true` the
+charge is the net charm, `C` or `Nc - Nac`, and charmonia drop out.
 
-- `charges = row -> (charm_count(row),)`: the charge tuple of each row, which
-  sets the basis.
+THERMINATOR lists omit antiparticles, so for them `antiparticles=true` is the
+default: the degeneracy is doubled for every row that is not self-conjugate
+(`Nq = Naq`, `Ns = Nas`, `Nc = Nac`, `I3 = 0`). The conjugate then carries the
+same charges, which is right for `c + c̄`; for charges that change sign, such
+as the net charm, pass `antiparticles=false` and add the conjugates yourself.
+Canonical lists already contain the antiparticles, and `antiparticles=true` is
+rejected for them. Other keywords:
+
+- `charges = row -> (charm_count(row; net),)`: the charge tuple of each row,
+  which sets the basis.
 - `condition`: row filter; by default rows whose charges all vanish are
   dropped, so a full light+charm list yields only the charm hadrons.
 - `minmass = 0`, `maxmass = Inf`: open mass window, as in Fluidum.
-- `statistics = :boltzmann`: or `:boson`, `:fermion`, or `:quantum` (chosen by
-  the spin).
+- `statistics = :boltzmann`: or `:boson`, `:fermion`, or `:quantum`
+  (Fermi-Dirac for baryons, Bose-Einstein otherwise).
 
 Masses stay in GeV; use an EOS whose energy unit is GeV.

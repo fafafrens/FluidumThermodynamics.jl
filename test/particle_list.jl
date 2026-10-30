@@ -69,3 +69,86 @@ const charm_list_file = joinpath(@__DIR__,"fixtures","particles_charm.data")
     @test charge_density(th,1) ≈ sum(s -> s.charges[1]*n(s),list)
     @test susceptibilities(th)[1,1] ≈ sum(s -> s.charges[1]^2*n(s),list)/T
 end
+
+const canonical_charm_file = joinpath(@__DIR__,"fixtures","particles_charm.dat")
+const canonical_light_file = joinpath(@__DIR__,"fixtures","particles_light_qm_excerpt.dat")
+
+@testset "Canonical FastReso particle list" begin
+    table = read_particle_table(canonical_charm_file)
+    @test length(table) == 91
+    row(id) = only(filter(r -> r.id == id,table))
+    jpsi = row(443)
+    @test jpsi.name == "J/psi(1S)" && jpsi.mass == 3.0969 && jpsi.degeneracy == 3 && jpsi.C == 0
+    # The PDG digits nq1 nq2 nq3 give the charm quarks and antiquarks.
+    @test FluidumThermodynamics._pdg_charm_quarks(443) == 2
+    @test FluidumThermodynamics._pdg_charm_quarks(9000443) == 2
+    @test FluidumThermodynamics._pdg_charm_quarks(-421) == 1
+    @test FluidumThermodynamics._pdg_charm_quarks(104324) == 1
+    @test FluidumThermodynamics._pdg_charm_quarks(211) == 0
+    # c + c̄ (default) and net charm.
+    for (id,q,qnet) in ((421,1,1),(-421,1,-1),(4122,1,1),(-4122,1,-1),(-433,1,-1),
+                        (443,2,0),(441,2,0),(9000443,2,0),(100443,2,0))
+        @test charm_count(row(id)) == q
+        @test charm_count(row(id); net=true) == qnet == row(id).C
+    end
+    @test count(r -> charm_count(r) == 1,table) == 78
+    @test count(r -> charm_count(r) == 2,table) == 13
+
+    # Default list: every row, degeneracies from the file, antiparticles not doubled.
+    list = read_particle_list(canonical_charm_file)
+    @test list isa Vector{HadronSpecies{Float64,1}} && length(list) == 91
+    @test [s.degeneracy for s in list] == [r.degeneracy for r in table]
+    @test [s.charges[1] for s in list] == [charm_count(r) for r in table]
+    @test list[findfirst(r -> r.id == 423,table)].degeneracy == 3   # D*(2007)⁰
+    @test_throws ArgumentError read_particle_list(canonical_charm_file; antiparticles=true)
+    @test read_particle_list(canonical_charm_file; antiparticles=false) == list
+    quantum = read_particle_list(canonical_charm_file; statistics=:quantum)
+    @test quantum[findfirst(r -> r.id == 4122,table)].statistics == -1   # Λc fermion
+    @test quantum[findfirst(r -> r.id == 421,table)].statistics == 1     # D⁰ boson
+
+    # Net charm: charmonia drop out and the gas is charge-symmetric.
+    netlist = read_particle_list(canonical_charm_file; net=true)
+    @test length(netlist) == 78
+    @test sort([s.charges[1] for s in netlist]) == [fill(-1.0,39); fill(1.0,39)]
+    eos = HadronResonanceGas(netlist)
+    T = 0.155
+    @test abs(charge_density(thermodynamic(eos,GrandCanonicalPoint(T,0.0)),1)) < 1e-14
+    @test charge_density(thermodynamic(eos,GrandCanonicalPoint(T,0.03)),1) ≈
+          -charge_density(thermodynamic(eos,GrandCanonicalPoint(T,-0.03)),1)
+
+    # Quark-model ids are not PDG numbers: their digits must not count as charm.
+    light = read_particle_table(canonical_light_file)
+    @test length(light) == 10
+    @test any(r -> FluidumThermodynamics._pdg_charm_quarks(r.id) > 0,light)   # 5000440, 2248, ...
+    @test all(r -> charm_count(r) == 0 && charm_count(r; net=true) == 0,light)
+    @test_throws ArgumentError read_particle_list(canonical_light_file)
+    baryons = read_particle_list(canonical_light_file; charges=r -> (r.B,),condition=_ -> true,
+                                 statistics=:quantum)
+    @test [s.charges[1] for s in baryons] == [r.B for r in light]
+    @test [s.statistics for s in baryons] == [iszero(r.B) ? 1 : -1 for r in light]
+
+    # Format detection, and forcing the wrong format.
+    @test eltype(read_particle_table(charm_list_file)) !== eltype(table)
+    @test read_particle_table(canonical_charm_file; format=:canonical) == table
+    @test_throws ArgumentError read_particle_table(canonical_charm_file; format=:therminator)
+    @test_throws ArgumentError read_particle_table(charm_list_file; format=:canonical)
+    @test_throws ArgumentError read_particle_table(canonical_charm_file; format=:pdg)
+    mktemp() do path, io
+        write(io,"# id name mass width degeneracy B S C Bot I Q [aliases...]\n",
+                 "421 D0 1.86484 0.0 1.0 0 0 1 0 0.5 0 D^0 Dzero\n\n421 D0 1.86484 0.0 1.0 0 0 1\n")
+        close(io)
+        err = try read_particle_table(path); nothing catch e; e end
+        @test err isa ArgumentError && occursin(":4:",err.msg)
+    end
+    mktemp() do path, io
+        write(io,"421 D0 1.86484 0.0 1.0 0 0 1 0 0.5 0 D^0 Dzero\n")
+        close(io)
+        @test only(read_particle_list(path)).mass == 1.86484   # aliases ignored
+    end
+
+    # THERMINATOR lists: net charm is Nc - Nac.
+    old = read_particle_table(charm_list_file)
+    @test charm_count(only(filter(r -> r.name == "jp3096zer",old)); net=true) == 0
+    oldnet = read_particle_list(charm_list_file; net=true, antiparticles=false)
+    @test length(oldnet) == 8 && all(s -> s.charges[1] == 1,oldnet)
+end

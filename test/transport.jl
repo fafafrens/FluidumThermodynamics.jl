@@ -166,6 +166,24 @@ end
     @test_throws MethodError CharmTransport(eos,DsT)
 end
 
+# Literal transcription of Fluidum's `normalization` and `τ_diffusion_hadron`
+# (natural units; μ there is the fugacity exponent μ/T).
+function fluidum_hadronic_charm(hadrons, x, DsT)
+    T, α = x.T, x.μ[1]/x.T
+    bk(ν,z) = FluidumThermodynamics.besselkx(ν,z)*exp(-z)
+    norm, tauq = 0.0, 0.0
+    for s in hadrons
+        mi, deg, q = s.mass, s.degeneracy, s.charges[1]
+        b1, b2 = bk(1,mi/T), bk(2,mi/T)
+        b3 = b1+4/(mi/T)*b2
+        b4 = b2+6/(mi/T)*b3
+        b5 = b3+8/(mi/T)*b4
+        norm += q^2*deg*(T/(2*pi^2)*mi^2*exp(q*α)*b2)
+        tauq += deg*((2*pi*DsT)/(192*pi^3*T^3)*q^2*mi^5*exp(q*α)*(2*b1-3*b3+b5))
+    end
+    norm, tauq
+end
+
 @testset "Hadronic charm diffusion" begin
     DsT, m = 0.2, 1.5
     x = GrandCanonicalPoint(0.16,0.04)
@@ -190,29 +208,26 @@ end
     hh = HeavyQuark(; particles=hadrons)
     thh = thermodynamic(hh,x)
     trh = transport(zero_model(HadronicCharmDiffusion(DsT,hadrons)),x,thh)
-    # Literal transcription of Fluidum's `normalization` and `τ_diffusion_hadron`
-    # (natural units, μ there is the fugacity exponent μ/T).
-    T, α = x.T, x.μ[1]/x.T
-    bk(ν,z) = FluidumThermodynamics.besselkx(ν,z)*exp(-z)
-    norm, tauq = 0.0, 0.0
-    for s in hadrons
-        mi, deg, q = s.mass, s.degeneracy, s.charges[1]
-        b1, b2 = bk(1,mi/T), bk(2,mi/T)
-        b3 = b1+4/(mi/T)*b2
-        b4 = b2+6/(mi/T)*b3
-        b5 = b3+8/(mi/T)*b4
-        norm += q^2*deg*(T/(2*pi^2)*mi^2*exp(q*α)*b2)
-        tauq += deg*((2*pi*DsT)/(192*pi^3*T^3)*q^2*mi^5*exp(q*α)*(2*b1-3*b3+b5))
-    end
-    @test trh.charge.kappa[1,1] ≈ DsT/T*norm
+    norm, tauq = fluidum_hadronic_charm(hadrons,x,DsT)
+    @test trh.charge.kappa[1,1] ≈ DsT/x.T*norm
     @test trh.charge.tau[1,1] ≈ tauq/norm
+    # The canonical FastReso2 list: antiparticles listed, c + c̄ from the PDG id.
+    canonical = read_particle_list(canonical_charm_file)
+    hc = HeavyQuark(; particles=canonical)
+    fc = FluidModel(hc,zero_model(HadronicCharmDiffusion(DsT,hc)))
+    thc, trc = @inferred transport(fc,x)
+    normc, tauqc = fluidum_hadronic_charm(canonical,x,DsT)
+    @test trc.charge.kappa[1,1] ≈ DsT/x.T*normc
+    @test trc.charge.tau[1,1] ≈ tauqc/normc
+    @test trc.charge.kappa[1,1] ≈ DsT*susceptibilities(thc)[1,1]
+    @test charm_allocations(fc,x) == 0
     # For Boltzmann species the normalization is T·∂n/∂μ of the gas, not n: J/ψ counts with q².
     @test trh.charge.kappa[1,1] ≈ DsT*susceptibilities(thh)[1,1]
-    @test !(trh.charge.kappa[1,1] ≈ DsT/T*charge_density(thh,1))
+    @test !(trh.charge.kappa[1,1] ≈ DsT/x.T*charge_density(thh,1))
     open_charm = filter(s -> s.charges[1] == 1,hadrons)
     tho = thermodynamic(HadronResonanceGas(open_charm),x)
     tro = transport(zero_model(HadronicCharmDiffusion(DsT,open_charm)),x,tho)
-    @test tro.charge.kappa[1,1] ≈ DsT/T*charge_density(tho,1)
+    @test tro.charge.kappa[1,1] ≈ DsT/x.T*charge_density(tho,1)
     # The species list, not the fluid EOS, sets κ and τ, as in Fluidum.
     @test transport(zero_model(HadronicCharmDiffusion(DsT,hadrons)),x,th).charge.kappa == trh.charge.kappa
     @test HadronicCharmDiffusion(DsT,hh.charm).species == hadrons

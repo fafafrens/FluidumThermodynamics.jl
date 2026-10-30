@@ -126,10 +126,12 @@ th = thermodynamic(eos, GrandCanonicalPoint(0.155, 0.02))
 The default species statistics are `:boltzmann` (one term). For quantum species,
 `terms` controls the fugacity expansion; increase it to check convergence.
 See the [HRG guide](docs/hrg.md) for the formula, multi-charge usage, and limits.
-No complete particle catalog is bundled. `read_particle_list(file; charges, condition,
-minmass, maxmass, statistics, antiparticles=true)` reads species from a FastReso
-`particles.data` file (by default with charge `Nc + Nac`, the heavy-quark count,
-and doubled degeneracy for the antiparticles the format omits); see the HRG guide.
+No complete particle catalog is bundled. `read_particle_list(file; net=false, charges,
+condition, minmass, maxmass, statistics, antiparticles)` reads species from a FastReso
+particle list, either a FastReso2 canonical table (`particles_*.dat`, antiparticles listed)
+or a 13-column THERMINATOR `particles.data` file (antiparticles added by doubling the
+degeneracy). The default charge is the heavy-quark count `c + c̄` (from the PDG id, or
+`Nc + Nac`); `net=true` gives the net charm instead. See the HRG guide.
 
 EOS models support addition, subtraction, negation, scalar multiplication,
 and scalar division. Composition combines evaluated pressure, gradient,
@@ -354,8 +356,8 @@ heavy-quark charge whose density and susceptibility come from a Boltzmann gas
 of the quark (degeneracy 6, mass `m`). `HeavyQuark(; particles=list)` (or
 `HeavyQuark(bulk, HadronResonanceGas(list))`) replaces the quark by a gas of
 heavy-flavour hadrons, each with its heavy-quark count as the charge;
-`read_particle_list(file)` reads such a list from a FastReso `particles.data`
-file with charge `Nc + Nac` (see `docs/hrg.md`). By default the quark pressure is added
+`read_particle_list(file)` reads such a list from a FastReso particle file with
+charge `c + c̄` (see `docs/hrg.md`). By default the quark pressure is added
 to the bulk, so the state derives from a single potential;
 `backreaction=false` reproduces Fluidum, where the quark gas does not
 back-react on the bulk. `CharmTransport(hq,DsT)` (or `CharmTransport(m,DsT)`) is the free
